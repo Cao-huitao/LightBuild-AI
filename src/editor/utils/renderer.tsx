@@ -136,20 +136,27 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
   function buildStyle(component: Component): Record<string, any> {
     const style: Record<string, any> = {};
 
+    // Convert antd ColorPicker Color objects to CSS string
+    function toCSS(v: any): string {
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof v.toHexString === 'function') return v.toHexString();
+      return String(v ?? '');
+    }
+
     // 1. Apply user-configured style from props.style
     const s = component.props?.style || {};
-    if (s.width) style.width = s.width;
-    if (s.height) style.height = s.height;
+    if (s.width) style.width = toCSS(s.width);
+    if (s.height) style.height = toCSS(s.height);
     if (s.marginTop !== undefined) style.marginTop = s.marginTop;
     if (s.marginRight !== undefined) style.marginRight = s.marginRight;
     if (s.marginBottom !== undefined) style.marginBottom = s.marginBottom;
     if (s.marginLeft !== undefined) style.marginLeft = s.marginLeft;
     if (s.borderWidth !== undefined) style.borderWidth = s.borderWidth;
-    if (s.borderStyle) style.borderStyle = s.borderStyle;
-    if (s.borderColor) style.borderColor = s.borderColor;
+    if (s.borderStyle) style.borderStyle = toCSS(s.borderStyle);
+    if (s.borderColor) style.borderColor = toCSS(s.borderColor);
     if (s.borderRadius !== undefined) style.borderRadius = s.borderRadius;
-    if (s.backgroundColor) style.backgroundColor = s.backgroundColor;
-    if (s.color) style.color = s.color;
+    if (s.backgroundColor) style.backgroundColor = toCSS(s.backgroundColor);
+    if (s.color) style.color = toCSS(s.color);
     if (s.fontSize !== undefined) style.fontSize = s.fontSize;
 
     // Box shadow
@@ -158,7 +165,7 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
       const sy = s.shadowY || 0;
       const blur = s.shadowBlur || 0;
       const spread = s.shadowSpread || 0;
-      const sc = s.shadowColor || 'rgba(0,0,0,0.2)';
+      const sc = toCSS(s.shadowColor || 'rgba(0,0,0,0.2)');
       style.boxShadow = `${sx}px ${sy}px ${blur}px ${spread}px ${sc}`;
     }
 
@@ -175,6 +182,7 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
   function buildElementProps(component: Component): Record<string, any> {
     const props = formatProps(component);
     delete props.children;
+    delete props.style; // handled separately by buildStyle, avoid overriding CSS output
 
     const eventProps = handleEvent(component);
     Object.assign(props, eventProps);
@@ -183,8 +191,8 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
       key: component.id,
       id: component.id,
       ref: (ref: any) => { componentRefs.current[component.id] = ref; },
-      style: buildStyle(component),
       ...props,
+      style: buildStyle(component),
     };
 
     if (mode === 'edit') {
