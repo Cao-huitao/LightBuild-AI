@@ -1,6 +1,12 @@
 import React from 'react';
-import { Form, Select, Input, Tooltip } from 'antd';
-import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import { Form, Select, Input, Tooltip, Button, Space } from 'antd';
+import {
+  CopyOutlined,
+  CheckOutlined,
+  DeleteOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+} from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 import { ITEM_TYPE } from '../../item-type';
 import { useComponents, useSelectedComponent } from '../../stores/components';
@@ -41,6 +47,9 @@ const componentSettingMap: Record<string, any[]> = {
 const ComponentAttr: React.FC = () => {
   const selectedComponentId = useComponents((state) => state.selectedComponentId);
   const updateComponentProps = useComponents((state) => state.updateComponentProps);
+  const deleteComponent = useComponents((state) => state.deleteComponent);
+  const copyComponent = useComponents((state) => state.copyComponent);
+  const moveComponent = useComponents((state) => state.moveComponent);
   const curComponent = useSelectedComponent();
   const [copied, setCopied] = useState(false);
 
@@ -82,6 +91,39 @@ const ComponentAttr: React.FC = () => {
 
   return (
     <div className='pt-[20px] px-4'>
+      <div className='mb-4'>
+        <Space size='small'>
+          <Tooltip title="上移">
+            <Button
+              size='small'
+              icon={<ArrowUpOutlined />}
+              onClick={() => moveComponent(selectedComponentId!, 'up')}
+            />
+          </Tooltip>
+          <Tooltip title="下移">
+            <Button
+              size='small'
+              icon={<ArrowDownOutlined />}
+              onClick={() => moveComponent(selectedComponentId!, 'down')}
+            />
+          </Tooltip>
+          <Tooltip title="复制">
+            <Button
+              size='small'
+              icon={<CopyOutlined />}
+              onClick={() => copyComponent(selectedComponentId!)}
+            />
+          </Tooltip>
+          <Tooltip title="删除">
+            <Button
+              size='small'
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => deleteComponent(selectedComponentId!)}
+            />
+          </Tooltip>
+        </Space>
+      </div>
       <Form
         form={form}
         onValuesChange={valueChange}

@@ -1,49 +1,60 @@
 import { create } from 'zustand';
 
-
-// interface 类型声明
-// 定义一个可嵌套的组件结构  就是一个树节点
 export interface Component {
   id: number;
   name: string;
-  props: any;//组件属性
-  children?: Component[];//子组件 可选
+  props: any;
+  children?: Component[];
+  x?: number;
+  y?: number;
 }
 
 interface State {
-  components: Component[];//整个组件树数组
-  selectedComponentId: number | null;//选中组件的id
-  mode: 'edit' | 'preview';//当前模式：编辑模式或预览模式
+  components: Component[];
+  selectedComponentId: number | null;
+  mode: 'edit' | 'preview';
+  history: Component[][];
+  future: Component[][];
 }
 
-// 定义修改状态的方法
-interface Action {//新添加的组件         父组件id 可选  没有就加到根节点
+interface Action {
   addComponent: (component: Component, parentId?: number) => void;
-  selectComponent: (id: number | null) => void;//选中组件
-  updateComponentProps: (componentId: number, props: any) => void;//更新组件属性
-  setMode: (mode: State['mode']) => void;//设置模式
+  selectComponent: (id: number | null) => void;
+  updateComponentProps: (componentId: number, props: any) => void;
+  updateComponentPosition: (componentId: number, x: number, y: number) => void;
+  deleteComponent: (componentId: number) => void;
+  copyComponent: (componentId: number) => void;
+  moveComponent: (componentId: number, direction: 'up' | 'down') => void;
+  undo: () => void;
+  redo: () => void;
+  setMode: (mode: State['mode']) => void;
 }
 
-// 遍历组件树 找到parentId对应的组件 把新组件加到他的children
-const addComponentRecursively = (
-  components: Component[],//当前层组件列表
+// ---- helpers ----
+
+function recordMutation(state: State, components: Component[]): Partial<State> {
+  return {
+    components,
+    history: [...state.history, state.components],
+    future: [],
+  };
+}
+
+function addComponentRecursively(
+  components: Component[],
   newComponent: Component,
   parentId?: number
-): Component[] => {
+): Component[] {
   if (parentId === undefined) {
-    return [...components, newComponent];//没有id 就加到根组件
+    return [...components, newComponent];
   }
-
-  // 遍历当前层所有组件
   return components.map((component) => {
-    // 当前层可以找到，加入
     if (component.id === parentId) {
       return {
         ...component,
         children: [...(component.children || []), newComponent],
       };
     }
-    // 当前层没有，且还要children，递归
     if (component.children && component.children.length > 0) {
       return {
         ...component,
@@ -52,20 +63,16 @@ const addComponentRecursively = (
     }
     return component;
   });
-};
+}
 
-// 遍历组件树 更新指定组件的属性
-const updateComponentPropsRecursively = (
+function updateComponentPropsRecursively(
   components: Component[],
   componentId: number,
   props: any
-): Component[] => {
+): Component[] {
   return components.map((component) => {
     if (component.id === componentId) {
-      return {
-        ...component,
-        props: { ...component.props, ...props },
-      };
+      return { ...component, props: { ...component.props, ...props } };
     }
     if (component.children && component.children.length > 0) {
       return {
@@ -75,66 +82,232 @@ const updateComponentPropsRecursively = (
     }
     return component;
   });
-};
+}
 
-// 根据id查找组件
-const findComponentById = (
+function updateComponentPositionRecursively(
   components: Component[],
-  componentId: number
-): Component | null => {
-  for (const component of components) {
+  componentId: number,
+  x: number,
+  y: number
+): Component[] {
+  return components.map((component) => {
     if (component.id === componentId) {
-      return component;
+      return { ...component, x, y };
     }
     if (component.children && component.children.length > 0) {
-      const found = findComponentById(component.children, componentId);
-      if (found) {
-        return found;
+      return {
+        ...component,
+        children: updateComponentPositionRecursively(component.children, componentId, x, y),
+      };
+    }
+    return component;
+  });
+}
+
+function removeComponentRecursively(
+  components: Component[],
+  targetId: number
+): Component[] {
+  return components
+    .filter((c) => c.id !== targetId)
+    .map((c) =>
+      c.children
+        ? { ...c, children: removeComponentRecursively(c.children, targetId) }
+        : c
+    );
+}
+
+function moveComponentRecursively(
+  components: Component[],
+  targetId: number,
+  direction: 'up' | 'down'
+): Component[] {
+  const delta = direction === 'up' ? -1 : 1;
+
+  for (let i = 0; i < components.length; i++) {
+    if (components[i].id === targetId) {
+      const newIndex = i + delta;
+      if (newIndex < 0 || newIndex >= components.length) return components;
+      const swapped = [...components];
+      [swapped[i], swapped[newIndex]] = [swapped[newIndex], swapped[i]];
+      return swapped;
+    }
+    if (components[i].children?.length) {
+      const newChildren = moveComponentRecursively(
+        components[i].children!,
+        targetId,
+        direction
+      );
+      if (newChildren !== components[i].children) {
+        return components.map((c, idx) =>
+          idx === i ? { ...c, children: newChildren } : c
+        );
       }
     }
   }
-  return null;
-};
+  return components;
+}
 
-// 创建store
+function findComponentById(
+  components: Component[],
+  componentId: number
+): Component | null {
+  for (const component of components) {
+    if (component.id === componentId) return component;
+    if (component.children && component.children.length > 0) {
+      const found = findComponentById(component.children, componentId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findParentAndIndex(
+  components: Component[],
+  targetId: number,
+  parent?: Component
+): { parent: Component | null; index: number } | null {
+  for (let i = 0; i < components.length; i++) {
+    if (components[i].id === targetId) {
+      return { parent: parent || null, index: i };
+    }
+    if (components[i].children?.length) {
+      const found = findParentAndIndex(
+        components[i].children!,
+        targetId,
+        components[i]
+      );
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function replaceChildrenInParent(
+  components: Component[],
+  parentId: number,
+  newChildren: Component[]
+): Component[] {
+  return components.map((c) => {
+    if (c.id === parentId) return { ...c, children: newChildren };
+    if (c.children?.length) {
+      return {
+        ...c,
+        children: replaceChildrenInParent(c.children, parentId, newChildren),
+      };
+    }
+    return c;
+  });
+}
+
+function cloneComponentTree(component: Component): Component {
+  function clone(c: Component): Component {
+    const newId = Date.now() + Math.floor(Math.random() * 1000000);
+    return {
+      ...c,
+      id: newId,
+      props: { ...c.props },
+      children: c.children?.map(clone),
+    };
+  }
+  return clone(component);
+}
+
 export const useComponents = create<State & Action>((set) => ({
-  components: [],//初始状态
+  components: [],
   selectedComponentId: null,
-  mode: 'edit',//初始为编辑模式
-  // 添加全局组件方法
+  mode: 'edit',
+  history: [],
+  future: [],
+
   addComponent: (component, parentId) =>
     set((state) => {
       const newComponents = addComponentRecursively(state.components, component, parentId);
-      console.log('Store updated:', newComponents);
-      return { components: newComponents };
+      return recordMutation(state, newComponents);
     }),
-  // 选中组件方法
-  selectComponent: (id) =>
-    set({
-      selectedComponentId: id,
-    }),
-  // 更新组件属性方法
+
+  selectComponent: (id) => set({ selectedComponentId: id }),
+
   updateComponentProps: (componentId, props) =>
     set((state) => {
       const newComponents = updateComponentPropsRecursively(state.components, componentId, props);
-      console.log('Component props updated:', componentId, props);
-      return { components: newComponents };
+      return recordMutation(state, newComponents);
     }),
-  // 设置模式方法
-  setMode: (mode) =>
-    set({
-      mode,
+
+  updateComponentPosition: (componentId, x, y) =>
+    set((state) => {
+      const newComponents = updateComponentPositionRecursively(state.components, componentId, x, y);
+      return recordMutation(state, newComponents);
     }),
+
+  deleteComponent: (componentId) =>
+    set((state) => {
+      const newComponents = removeComponentRecursively(state.components, componentId);
+      return {
+        ...recordMutation(state, newComponents),
+        selectedComponentId:
+          state.selectedComponentId === componentId ? null : state.selectedComponentId,
+      };
+    }),
+
+  copyComponent: (componentId) =>
+    set((state) => {
+      const component = findComponentById(state.components, componentId);
+      if (!component) return {};
+
+      const cloned = cloneComponentTree(component);
+      const result = findParentAndIndex(state.components, componentId);
+      let newComponents: Component[];
+
+      if (!result) {
+        newComponents = [...state.components, cloned];
+      } else if (result.parent) {
+        const siblings = [...result.parent.children!];
+        siblings.splice(result.index + 1, 0, cloned);
+        newComponents = replaceChildrenInParent(state.components, result.parent.id, siblings);
+      } else {
+        newComponents = [...state.components];
+        newComponents.splice(result.index + 1, 0, cloned);
+      }
+
+      return recordMutation(state, newComponents);
+    }),
+
+  moveComponent: (componentId, direction) =>
+    set((state) => {
+      const newComponents = moveComponentRecursively(state.components, componentId, direction);
+      return recordMutation(state, newComponents);
+    }),
+
+  undo: () =>
+    set((state) => {
+      if (state.history.length === 0) return {};
+      const previous = state.history[state.history.length - 1];
+      return {
+        components: previous,
+        history: state.history.slice(0, -1),
+        future: [state.components, ...state.future],
+      };
+    }),
+
+  redo: () =>
+    set((state) => {
+      if (state.future.length === 0) return {};
+      const next = state.future[0];
+      return {
+        components: next,
+        history: [...state.history, state.components],
+        future: state.future.slice(1),
+      };
+    }),
+
+  setMode: (mode) => set({ mode }),
 }));
 
-// 获取当前选中的组件
 export const useSelectedComponent = () => {
   const components = useComponents((state) => state.components);
   const selectedComponentId = useComponents((state) => state.selectedComponentId);
 
-  if (!selectedComponentId) {
-    return null;
-  }
-
+  if (!selectedComponentId) return null;
   return findComponentById(components, selectedComponentId);
 };

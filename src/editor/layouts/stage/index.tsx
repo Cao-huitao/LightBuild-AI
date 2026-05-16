@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { useDrop } from 'react-dnd';
 import { ITEM_TYPE } from '../../item-type';
 import { useComponents } from '../../stores/components';
-import Renderer from './Renderer';
+import UnifiedRenderer from '../../utils/renderer';
 import SelectedMask from '../../common/selected-mask';
 
 const Stage: React.FC = () => {
@@ -72,7 +72,7 @@ const Stage: React.FC = () => {
       style={{ border: canDrop ? '1px solid #ccc' : 'none' }}
       className='stage-container stage p-[24px] h-[100%] relative'
     >
-      <Renderer />
+      <UnifiedRenderer mode="edit" />
       {selectedComponentId && (
         <SelectedMask
           ref={maskRef}
