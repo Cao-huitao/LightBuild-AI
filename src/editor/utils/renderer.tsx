@@ -133,6 +133,45 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
     return null;
   }
 
+  function buildStyle(component: Component): Record<string, any> {
+    const style: Record<string, any> = {};
+
+    // 1. Apply user-configured style from props.style
+    const s = component.props?.style || {};
+    if (s.width) style.width = s.width;
+    if (s.height) style.height = s.height;
+    if (s.marginTop !== undefined) style.marginTop = s.marginTop;
+    if (s.marginRight !== undefined) style.marginRight = s.marginRight;
+    if (s.marginBottom !== undefined) style.marginBottom = s.marginBottom;
+    if (s.marginLeft !== undefined) style.marginLeft = s.marginLeft;
+    if (s.borderWidth !== undefined) style.borderWidth = s.borderWidth;
+    if (s.borderStyle) style.borderStyle = s.borderStyle;
+    if (s.borderColor) style.borderColor = s.borderColor;
+    if (s.borderRadius !== undefined) style.borderRadius = s.borderRadius;
+    if (s.backgroundColor) style.backgroundColor = s.backgroundColor;
+    if (s.color) style.color = s.color;
+    if (s.fontSize !== undefined) style.fontSize = s.fontSize;
+
+    // Box shadow
+    if (s.shadowX !== undefined || s.shadowY !== undefined) {
+      const sx = s.shadowX || 0;
+      const sy = s.shadowY || 0;
+      const blur = s.shadowBlur || 0;
+      const spread = s.shadowSpread || 0;
+      const sc = s.shadowColor || 'rgba(0,0,0,0.2)';
+      style.boxShadow = `${sx}px ${sy}px ${blur}px ${spread}px ${sc}`;
+    }
+
+    // 2. Edit mode: absolute positioning (layered AFTER user styles, never overridden)
+    if (mode === 'edit' && component.x !== undefined && component.y !== undefined) {
+      style.position = 'absolute';
+      style.left = component.x;
+      style.top = component.y;
+    }
+
+    return style;
+  }
+
   function buildElementProps(component: Component): Record<string, any> {
     const props = formatProps(component);
     delete props.children;
@@ -144,19 +183,12 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
       key: component.id,
       id: component.id,
       ref: (ref: any) => { componentRefs.current[component.id] = ref; },
+      style: buildStyle(component),
       ...props,
     };
 
     if (mode === 'edit') {
       elementProps['data-component-id'] = component.id;
-      if (component.x !== undefined && component.y !== undefined) {
-        elementProps.style = {
-          ...elementProps.style,
-          position: 'absolute',
-          left: component.x,
-          top: component.y,
-        };
-      }
     }
 
     return elementProps;

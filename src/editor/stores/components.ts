@@ -22,6 +22,7 @@ interface Action {
   selectComponent: (id: number | null) => void;
   updateComponentProps: (componentId: number, props: any) => void;
   updateComponentPosition: (componentId: number, x: number, y: number) => void;
+  updateComponentStyles: (componentId: number, styles: any) => void;
   deleteComponent: (componentId: number) => void;
   copyComponent: (componentId: number) => void;
   moveComponent: (componentId: number, direction: 'up' | 'down') => void;
@@ -98,6 +99,31 @@ function updateComponentPositionRecursively(
       return {
         ...component,
         children: updateComponentPositionRecursively(component.children, componentId, x, y),
+      };
+    }
+    return component;
+  });
+}
+
+function updateComponentStylesRecursively(
+  components: Component[],
+  componentId: number,
+  styles: any
+): Component[] {
+  return components.map((component) => {
+    if (component.id === componentId) {
+      return {
+        ...component,
+        props: {
+          ...component.props,
+          style: { ...component.props?.style, ...styles },
+        },
+      };
+    }
+    if (component.children && component.children.length > 0) {
+      return {
+        ...component,
+        children: updateComponentStylesRecursively(component.children, componentId, styles),
       };
     }
     return component;
@@ -299,6 +325,12 @@ export const useComponents = create<State & Action>((set) => ({
         history: [...state.history, state.components],
         future: state.future.slice(1),
       };
+    }),
+
+  updateComponentStyles: (componentId, styles) =>
+    set((state) => {
+      const newComponents = updateComponentStylesRecursively(state.components, componentId, styles);
+      return recordMutation(state, newComponents);
     }),
 
   setMode: (mode) => set({ mode }),

@@ -3,6 +3,7 @@ import type { SegmentedValue } from 'antd/es/segmented';
 import { useState } from 'react';
 import { useComponents, useSelectedComponent } from '../../stores/components';
 import ComponentAttr from './attr';
+import ComponentStyle from './style';
 import ComponentEvent from './event';
 
 const Setting: React.FC = () => {
@@ -21,9 +22,10 @@ const Setting: React.FC = () => {
 
   return (
     <div>
-      <Segmented value={key} onChange={setKey} block options={['属性', '事件']} />
+      <Segmented value={key} onChange={setKey} block options={['属性', '样式', '事件']} />
       <div className='pt-[20px]'>
         {key === '属性' && <ComponentAttr />}
+        {key === '样式' && <ComponentStyle />}
         {key === '事件' && <ComponentEvent />}
       </div>
     </div>
