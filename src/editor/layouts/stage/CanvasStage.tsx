@@ -78,7 +78,7 @@ const CanvasStage: React.FC = () => {
       if (hitId !== null) {
         const hitComp = findComponentById(components, hitId);
         if (hitComp?.name === 'Space') {
-          const abs = getAbsolutePosition(components, hitId);
+          const abs = getAbsolutePosition(components, hitId, ctx);
           if (abs) {
             return {
               id: hitId,
@@ -175,7 +175,7 @@ const CanvasStage: React.FC = () => {
 
       if (hitId !== null) {
         selectComponent(hitId);
-        const abs = getAbsolutePosition(components, hitId);
+        const abs = getAbsolutePosition(components, hitId, ctx);
         dragStateRef.current = {
           type: 'move',
           startScreenX: e.clientX,

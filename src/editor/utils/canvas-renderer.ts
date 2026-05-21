@@ -120,22 +120,26 @@ function hitTestComponent(
   const compY = (comp.y ?? 0) + parentY;
   const size = measureComponent(comp, ctx);
 
-  if (wx >= compX && wx <= compX + size.width && wy >= compY && wy <= compY + size.height) {
-    if (comp.name === 'Space' && comp.children?.length) {
-      const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
-      let cx = compX + SPACE_PAD;
-      const cy = compY + SPACE_PAD;
-      for (let i = comp.children.length - 1; i >= 0; i--) {
-        const childSize = measureComponent(comp.children[i], ctx);
-        if (wx >= cx && wx <= cx + childSize.width && wy >= cy && wy <= cy + childSize.height) {
-          return comp.children[i].id;
-        }
-        cx += childSize.width + gap;
-      }
-    }
-    return comp.id;
+  if (wx < compX || wx > compX + size.width || wy < compY || wy > compY + size.height) {
+    return null;
   }
-  return null;
+
+  if (comp.name === 'Space' && comp.children?.length) {
+    const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
+    let cx = compX + SPACE_PAD;
+    const cy = compY + SPACE_PAD;
+    for (let i = comp.children.length - 1; i >= 0; i--) {
+      const child = comp.children[i];
+      const childSize = measureComponent(child, ctx);
+      if (wx >= cx && wx <= cx + childSize.width && wy >= cy && wy <= cy + childSize.height) {
+        const deep = hitTestComponent(child, wx, wy, ctx, cx, cy);
+        return deep ?? child.id;
+      }
+      cx += childSize.width + gap;
+    }
+  }
+
+  return comp.id;
 }
 
 export function findComponentById(components: Component[], id: number): Component | null {
@@ -152,17 +156,20 @@ export function findComponentById(components: Component[], id: number): Componen
 export function getAbsolutePosition(
   components: Component[],
   targetId: number,
+  ctx: CanvasRenderingContext2D,
 ): { x: number; y: number } | null {
   function walk(comps: Component[], px: number, py: number): { x: number; y: number } | null {
+    let cx = px;
     for (const comp of comps) {
-      const compX = (comp.x ?? 0) + px;
+      const compX = (comp.x ?? 0) + cx;
       const compY = (comp.y ?? 0) + py;
       if (comp.id === targetId) return { x: compX, y: compY };
-      if (comp.children?.length) {
-        const ox = comp.name === 'Space' ? SPACE_PAD : 0;
-        const oy = comp.name === 'Space' ? SPACE_PAD : 0;
-        const found = walk(comp.children, compX + ox, compY + oy);
+      if (comp.children?.length && comp.name === 'Space') {
+        const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
+        const childSize = measureComponent(comp, ctx);
+        const found = walk(comp.children, compX + SPACE_PAD, compY + SPACE_PAD);
         if (found) return found;
+        cx += childSize.width + gap;
       }
     }
     return null;
