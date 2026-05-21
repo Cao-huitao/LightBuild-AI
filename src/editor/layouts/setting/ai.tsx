@@ -1,24 +1,26 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Input, Button, Typography, Spin, Tag } from 'antd';
-import { SendOutlined, KeyOutlined } from '@ant-design/icons';
+import { SendOutlined, KeyOutlined, ClearOutlined } from '@ant-design/icons';
 import { sendMessage, saveApiKey, hasApiKey, type ChatMessage } from '../../utils/ai-service';
 import { useComponents, useSelectedComponent } from '../../stores/components';
+import { useAIChatStore } from '../../stores/ai-chat';
 
 const { Text } = Typography;
 
 const ComponentAI: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showApiKey, setShowApiKey] = useState(!hasApiKey());
   const [apiKeyInput, setApiKeyInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const messages = useAIChatStore((s) => s.messages);
+  const addMessage = useAIChatStore((s) => s.addMessage);
+  const clearMessages = useAIChatStore((s) => s.clearMessages);
+
   const curComponent = useSelectedComponent();
   const selectedComponentId = useComponents((s) => s.selectedComponentId);
   const updateComponentStyles = useComponents((s) => s.updateComponentStyles);
-
-  const conversationRef = useRef<ChatMessage[]>([]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -37,28 +39,23 @@ const ComponentAI: React.FC = () => {
     if (!text || loading) return;
 
     if (!selectedComponentId || !curComponent) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', content: text },
-        { role: 'assistant', content: '请先在画布上选中一个组件。' },
-      ]);
+      addMessage({ role: 'user', content: text });
+      addMessage({ role: 'assistant', content: '请先在画布上选中一个组件。' });
       setInput('');
       return;
     }
 
     setLoading(true);
-    const userMsg: ChatMessage = { role: 'user', content: text };
-    setMessages((prev) => [...prev, userMsg]);
+    addMessage({ role: 'user', content: text });
     setInput('');
 
     try {
       const response = await sendMessage(
         text,
         { component: curComponent },
-        conversationRef.current,
+        messages,
       );
 
-      // Execute tool calls
       for (const tc of response.toolCalls) {
         if (tc.name === 'update_component_styles') {
           updateComponentStyles(selectedComponentId, tc.input.styles);
@@ -66,14 +63,10 @@ const ComponentAI: React.FC = () => {
       }
 
       const reply = response.text || (response.toolCalls.length > 0 ? '样式已更新' : '完成');
-      const assistantMsg: ChatMessage = { role: 'assistant', content: reply };
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      conversationRef.current.push({ role: 'user', content: text });
-      conversationRef.current.push({ role: 'assistant', content: reply });
+      addMessage({ role: 'assistant', content: reply });
     } catch (err: any) {
       const errorMsg = err.message || '请求失败';
-      setMessages((prev) => [...prev, { role: 'assistant', content: `错误: ${errorMsg}` }]);
+      addMessage({ role: 'assistant', content: `错误: ${errorMsg}` });
       if (errorMsg.includes('API Key') || errorMsg.includes('401')) {
         setShowApiKey(true);
       }
@@ -84,7 +77,6 @@ const ComponentAI: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      {/* API Key setup */}
       {showApiKey && (
         <div className="p-3 bg-orange-50 border-b border-orange-200">
           <div className="flex items-center gap-2 mb-2">
@@ -106,7 +98,6 @@ const ComponentAI: React.FC = () => {
         </div>
       )}
 
-      {/* Component info */}
       {curComponent && (
         <div className="px-3 py-2 bg-gray-50 border-b text-xs text-gray-500 flex items-center gap-2">
           <span>当前:</span>
@@ -115,7 +106,6 @@ const ComponentAI: React.FC = () => {
         </div>
       )}
 
-      {/* Messages */}
       <div className="flex-1 overflow-auto p-3 space-y-2 min-h-[200px] max-h-[350px]">
         {messages.length === 0 && (
           <div className="text-gray-400 text-xs text-center py-8">
@@ -150,23 +140,32 @@ const ComponentAI: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="p-2 border-t flex gap-2">
-        <Input
-          size="small"
-          placeholder={curComponent ? '描述样式修改...' : '请先选中组件'}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onPressEnter={handleSend}
-          disabled={loading}
-        />
-        <Button
-          size="small"
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={handleSend}
-          loading={loading}
-        />
+        {messages.length > 0 && (
+          <Button
+            size="small"
+            icon={<ClearOutlined />}
+            onClick={clearMessages}
+            title="清空对话"
+          />
+        )}
+        <div className="flex-1 flex gap-2">
+          <Input
+            size="small"
+            placeholder={curComponent ? '描述样式修改...' : '请先选中组件'}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onPressEnter={handleSend}
+            disabled={loading}
+          />
+          <Button
+            size="small"
+            type="primary"
+            icon={<SendOutlined />}
+            onClick={handleSend}
+            loading={loading}
+          />
+        </div>
       </div>
     </div>
   );
