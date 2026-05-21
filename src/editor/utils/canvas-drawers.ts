@@ -86,6 +86,23 @@ export function measureComponent(
         width: parseCSSPixel(s.width, 180),
         height: parseCSSPixel(s.height, 32),
       };
+    case 'Text': {
+      const text = resolveText(component.props?.children) || '文本';
+      const fontSize = parseCSSPixel(s.fontSize, 14);
+      ctx.font = `${fontSize}px ${FONT_FAMILY}`;
+      const textWidth = ctx.measureText(text).width;
+      return {
+        width: parseCSSPixel(s.width, textWidth + 4),
+        height: parseCSSPixel(s.height, fontSize * 1.4),
+      };
+    }
+    case 'Image':
+      return {
+        width: parseCSSPixel(s.width, 200),
+        height: parseCSSPixel(s.height, 150),
+      };
+    case 'Card':
+      return measureCard(component, ctx);
     case 'Space':
       return measureSpace(component, ctx);
     default:
@@ -117,6 +134,34 @@ function measureSpace(
 
   totalWidth = totalWidth - gap + padding;
   return { width: totalWidth, height: maxHeight + padding * 2 };
+}
+
+function measureCard(
+  component: Component,
+  ctx: CanvasRenderingContext2D,
+): { width: number; height: number } {
+  const children = component.children || [];
+  const padding = 12;
+  const titleHeight = 36;
+
+  if (children.length === 0) {
+    return { width: 260, height: 160 };
+  }
+
+  let maxChildWidth = 0;
+  let totalChildHeight = 0;
+
+  for (let i = 0; i < children.length; i++) {
+    const cs = measureComponent(children[i], ctx);
+    maxChildWidth = Math.max(maxChildWidth, cs.width);
+    totalChildHeight += cs.height;
+    if (i < children.length - 1) totalChildHeight += 8; // gap
+  }
+
+  return {
+    width: Math.max(260, maxChildWidth + padding * 2),
+    height: titleHeight + totalChildHeight + padding * 2,
+  };
 }
 
 export function drawButton(
@@ -226,6 +271,113 @@ export function drawSpace(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('拖入组件到此处', x + w / 2, y + h / 2);
+  }
+}
+
+export function drawText(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  props: any,
+) {
+  const s = props?.style || {};
+  const text = resolveText(props?.children) || '文本';
+  const fontSize = parseCSSPixel(s.fontSize, 14);
+  const textColor = toCSS(s.color || '#333333');
+
+  ctx.font = `${fontSize}px ${FONT_FAMILY}`;
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(text, x, y);
+}
+
+export function drawImage(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  _props: any,
+) {
+  const borderRadius = parseCSSPixel(_props?.style?.borderRadius, 4);
+
+  // Placeholder rectangle
+  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fill();
+  ctx.strokeStyle = '#d9d9d9';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Icon
+  ctx.font = `${Math.min(w, h) * 0.2}px ${FONT_FAMILY}`;
+  ctx.fillStyle = '#bfbfbf';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🖼', x + w / 2, y + h / 2 - 8);
+
+  ctx.font = `12px ${FONT_FAMILY}`;
+  ctx.fillText('Image', x + w / 2, y + h / 2 + 14);
+}
+
+export function drawCard(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  props: any,
+  isEmpty: boolean,
+) {
+  const title = resolveText(props?.title) || '卡片标题';
+  const borderRadius = parseCSSPixel(props?.style?.borderRadius, 8);
+  const titleHeight = 36;
+
+  // Card background
+  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.strokeStyle = '#e8e8e8';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Title bar background
+  ctx.save();
+  drawRoundRect(ctx, x, y, w, titleHeight, borderRadius);
+  ctx.clip();
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(x, y, w, titleHeight);
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, y + titleHeight);
+  ctx.lineTo(x + w, y + titleHeight);
+  ctx.stroke();
+  ctx.restore();
+
+  // Redraw border over the clipped area
+  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  ctx.strokeStyle = '#e8e8e8';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Title text
+  ctx.font = `13px ${FONT_FAMILY}`;
+  ctx.fillStyle = '#333333';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, x + 12, y + titleHeight / 2);
+
+  // Empty placeholder
+  if (isEmpty) {
+    ctx.font = `11px ${FONT_FAMILY}`;
+    ctx.fillStyle = '#bfbfbf';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('拖入组件到此处', x + w / 2, y + titleHeight + (h - titleHeight) / 2);
   }
 }
 

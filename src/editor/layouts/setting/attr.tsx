@@ -42,6 +42,28 @@ const componentSettingMap: Record<string, any[]> = {
       type: 'input',
     },
   ],
+  [ITEM_TYPE.TEXT]: [{
+    name: 'children',
+    label: '文本内容',
+    type: 'input',
+  }],
+  [ITEM_TYPE.IMAGE]: [
+    {
+      name: 'src',
+      label: '图片地址',
+      type: 'input',
+    },
+    {
+      name: 'alt',
+      label: '替代文本',
+      type: 'input',
+    },
+  ],
+  [ITEM_TYPE.CARD]: [{
+    name: 'title',
+    label: '卡片标题',
+    type: 'input',
+  }],
 };
 
 const ComponentAttr: React.FC = () => {

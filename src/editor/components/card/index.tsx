@@ -1,5 +1,4 @@
-import { Space as AntdSpace } from 'antd';
-import React, { useRef } from "react";
+import React, { useRef } from 'react';
 import { useDrop } from 'react-dnd';
 import { ITEM_TYPE } from '../../item-type';
 
@@ -9,7 +8,7 @@ interface Props {
   [key: string]: any;
 }
 
-const Space: React.FC<Props> = ({ children, id, ref: rendererRef, ...rest }) => {
+const Card: React.FC<Props> = ({ children, id, ref: rendererRef, title, style, ...rest }) => {
   const dropRef = useRef<HTMLDivElement>(null);
 
   const [{ canDrop }, drop] = useDrop(() => ({
@@ -27,7 +26,6 @@ const Space: React.FC<Props> = ({ children, id, ref: rendererRef, ...rest }) => 
 
   drop(dropRef);
 
-  // Merge refs: react-dnd's dropRef + renderer's componentRefs callback
   function setRef(node: any) {
     dropRef.current = node;
     if (typeof rendererRef === 'function') {
@@ -39,24 +37,35 @@ const Space: React.FC<Props> = ({ children, id, ref: rendererRef, ...rest }) => 
   const isEmpty = !childrenArray.length;
 
   return (
-    <AntdSpace
+    <div
       ref={setRef}
-      className='p-[16px]'
-      style={{
-        border: canDrop ? '1px dashed #1677ff' : isEmpty ? '1px dashed #d9d9d9' : 'none',
-        minWidth: isEmpty ? 320 : undefined,
-        minHeight: isEmpty ? 200 : undefined,
-        width: isEmpty ? undefined : 'fit-content',
-        height: isEmpty ? undefined : 'fit-content',
-        boxSizing: 'border-box',
-        ...rest.style,
-      }}
       data-component-id={id}
+      className="rounded-lg overflow-hidden"
+      style={{
+        border: canDrop ? '2px dashed #1677ff' : '1px solid #e8e8e8',
+        minWidth: isEmpty ? 260 : 'fit-content',
+        minHeight: isEmpty ? 160 : 'fit-content',
+        boxSizing: 'border-box',
+        background: '#fff',
+        ...style,
+      }}
       {...rest}
     >
-      {isEmpty ? '拖入组件到此处' : children}
-    </AntdSpace>
+      <div
+        className="px-3 py-2 font-medium text-sm"
+        style={{ background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}
+      >
+        {title || '卡片标题'}
+      </div>
+      <div className="p-3 flex flex-col gap-2">
+        {isEmpty ? (
+          <span className="text-gray-400 text-xs">拖入组件到此处</span>
+        ) : (
+          children
+        )}
+      </div>
+    </div>
   );
 };
 
-export default Space;
+export default Card;

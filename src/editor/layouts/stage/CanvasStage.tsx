@@ -5,7 +5,7 @@ import { useCanvasTransform } from '../../hooks/useCanvasTransform';
 import { renderCanvas, hitTest, findComponentById, getAbsolutePosition } from '../../utils/canvas-renderer';
 import { screenToWorld } from '../../utils/coords';
 
-const ACCEPT_TYPES = ['Button', 'Space', 'Input'];
+const ACCEPT_TYPES = ['Button', 'Space', 'Input', 'Text', 'Image', 'Card'];
 
 interface DragState {
   type: 'none' | 'pan' | 'move';

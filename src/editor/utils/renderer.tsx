@@ -5,18 +5,36 @@ import { useVariablesStore } from '../stores/variable';
 import { usePageDataStore } from '../stores/page-data';
 import type { Component } from '../stores/components';
 import Space from '../components/space';
+import Text from '../components/Text';
+import Image from '../components/Image';
+import Card from '../components/card';
 import { ITEM_TYPE } from '../item-type';
 
 const ComponentMap: { [key: string]: any } = {
   Button: Button,
   Space: Space,
   Input: Input,
+  Text: Text,
+  Image: Image,
+  Card: Card,
 };
 
-const VOID_ELEMENTS = ['Input'];
+const VOID_ELEMENTS = ['Input', 'Text', 'Image'];
 
 const componentEventMap: Record<string, any[]> = {
   [ITEM_TYPE.BUTTON]: [{
+    name: 'onClick',
+    label: '点击事件',
+  }],
+  [ITEM_TYPE.TEXT]: [{
+    name: 'onClick',
+    label: '点击事件',
+  }],
+  [ITEM_TYPE.IMAGE]: [{
+    name: 'onClick',
+    label: '点击事件',
+  }],
+  [ITEM_TYPE.CARD]: [{
     name: 'onClick',
     label: '点击事件',
   }],

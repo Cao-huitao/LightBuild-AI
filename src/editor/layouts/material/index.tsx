@@ -8,8 +8,11 @@ const Material: React.FC = () => {
       <span className="font-bold text-gray-700 mb-4 block">物料区</span>
       <div className="mt-4">
         <ComponentItem description="按钮" name={ITEM_TYPE.BUTTON} />
-        <ComponentItem description="间距" name={ITEM_TYPE.SPACE} />
         <ComponentItem description="输入框" name={ITEM_TYPE.INPUT} />
+        <ComponentItem description="文本" name={ITEM_TYPE.TEXT} />
+        <ComponentItem description="图片" name={ITEM_TYPE.IMAGE} />
+        <ComponentItem description="间距" name={ITEM_TYPE.SPACE} />
+        <ComponentItem description="卡片" name={ITEM_TYPE.CARD} />
       </div>
     </div>
   );

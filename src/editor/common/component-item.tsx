@@ -24,6 +24,12 @@ const ComponentItem: React.FC<ComponentItemProps> = ({ name, description }) => {
         return { size: 'middle' };
       case 'Input':
         return { placeholder: '请输入...' };
+      case 'Text':
+        return { children: '文本内容' };
+      case 'Image':
+        return { src: 'https://placehold.co/200x150/eee/999?text=Image', alt: '图片' };
+      case 'Card':
+        return { title: '卡片标题' };
       default:
         return {};
     }

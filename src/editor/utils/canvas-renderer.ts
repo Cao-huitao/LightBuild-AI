@@ -4,6 +4,9 @@ import {
   measureComponent,
   drawButton,
   drawInput,
+  drawText,
+  drawImage,
+  drawCard,
   drawSpace,
   drawSelectionBox,
   drawGrid,
@@ -73,6 +76,28 @@ function renderComponent(
     case 'Input':
       drawInput(ctx, wx, wy, size.width, size.height, comp.props);
       break;
+    case 'Text':
+      drawText(ctx, wx, wy, size.width, size.height, comp.props);
+      break;
+    case 'Image':
+      drawImage(ctx, wx, wy, size.width, size.height, comp.props);
+      break;
+    case 'Card': {
+      drawCard(ctx, wx, wy, size.width, size.height, comp.props, !comp.children?.length);
+
+      if (comp.children?.length) {
+        const padding = 12;
+        const titleHeight = 36;
+        const gap = 8;
+        let cy = wy + titleHeight + padding;
+        for (const child of comp.children) {
+          const childSize = measureComponent(child, ctx);
+          renderComponent(ctx, child, selectedId, dragPreview, wx + padding, cy);
+          cy += childSize.height + gap;
+        }
+      }
+      break;
+    }
     case 'Space': {
       drawSpace(ctx, wx, wy, size.width, size.height, comp.props, !comp.children?.length);
 
@@ -139,6 +164,22 @@ function hitTestComponent(
     }
   }
 
+  if (comp.name === 'Card' && comp.children?.length) {
+    const padding = 12;
+    const titleHeight = 36;
+    const gap = 8;
+    let cy = compY + titleHeight + padding;
+    for (let i = comp.children.length - 1; i >= 0; i--) {
+      const child = comp.children[i];
+      const childSize = measureComponent(child, ctx);
+      if (wx >= compX + padding && wx <= compX + padding + childSize.width && wy >= cy && wy <= cy + childSize.height) {
+        const deep = hitTestComponent(child, wx, wy, ctx, compX + padding, cy);
+        return deep ?? child.id;
+      }
+      cy += childSize.height + gap;
+    }
+  }
+
   return comp.id;
 }
 
@@ -167,6 +208,14 @@ export function getAbsolutePosition(
       if (comp.children?.length && comp.name === 'Space') {
         const childSize = measureComponent(comp, ctx);
         const found = walk(comp.children, compX + SPACE_PAD, compY + SPACE_PAD, true);
+        if (found) return found;
+        if (useLayout) {
+          const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
+          cx += childSize.width + gap;
+        }
+      } else if (comp.children?.length && comp.name === 'Card') {
+        const childSize = measureComponent(comp, ctx);
+        const found = walk(comp.children, compX + 12, compY + 48, false);
         if (found) return found;
         if (useLayout) {
           const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;

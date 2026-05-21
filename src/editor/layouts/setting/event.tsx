@@ -9,6 +9,18 @@ const componentEventMap: Record<string, any[]> = {
     name: 'onClick',
     label: '点击事件',
   }],
+  [ITEM_TYPE.TEXT]: [{
+    name: 'onClick',
+    label: '点击事件',
+  }],
+  [ITEM_TYPE.IMAGE]: [{
+    name: 'onClick',
+    label: '点击事件',
+  }],
+  [ITEM_TYPE.CARD]: [{
+    name: 'onClick',
+    label: '点击事件',
+  }],
 };
 
 // 配置组件类型暴露出哪些方法
