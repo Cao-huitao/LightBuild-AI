@@ -158,21 +158,27 @@ export function getAbsolutePosition(
   targetId: number,
   ctx: CanvasRenderingContext2D,
 ): { x: number; y: number } | null {
-  function walk(comps: Component[], px: number, py: number): { x: number; y: number } | null {
+  function walk(comps: Component[], px: number, py: number, useLayout: boolean): { x: number; y: number } | null {
     let cx = px;
     for (const comp of comps) {
       const compX = (comp.x ?? 0) + cx;
       const compY = (comp.y ?? 0) + py;
       if (comp.id === targetId) return { x: compX, y: compY };
       if (comp.children?.length && comp.name === 'Space') {
-        const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
         const childSize = measureComponent(comp, ctx);
-        const found = walk(comp.children, compX + SPACE_PAD, compY + SPACE_PAD);
+        const found = walk(comp.children, compX + SPACE_PAD, compY + SPACE_PAD, true);
         if (found) return found;
-        cx += childSize.width + gap;
+        if (useLayout) {
+          const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
+          cx += childSize.width + gap;
+        }
+      } else if (useLayout) {
+        const compSize = measureComponent(comp, ctx);
+        const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
+        cx += compSize.width + gap;
       }
     }
     return null;
   }
-  return walk(components, 0, 0);
+  return walk(components, 0, 0, false);
 }

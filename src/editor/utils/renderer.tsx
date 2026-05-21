@@ -170,7 +170,7 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
     }
 
     // 2. Edit mode: absolute positioning (layered AFTER user styles, never overridden)
-    if (mode === 'edit' && component.x !== undefined && component.y !== undefined) {
+    if (component.x !== undefined && component.y !== undefined) {
       style.position = 'absolute';
       style.left = component.x;
       style.top = component.y;
@@ -222,7 +222,7 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
   const isEmpty = components.length === 0;
 
   return (
-    <div className={isEdit ? 'relative w-full h-full min-h-[400px]' : 'h-[100%] p-[24px] bg-white'}>
+    <div className={isEdit ? 'relative w-full h-full min-h-[400px]' : 'relative h-[100%] p-[24px] bg-white'}>
       {isEmpty ? (
         <div className="text-gray-400 text-center py-10">
           {isEdit ? '拖拽组件到这里' : '暂无内容'}
