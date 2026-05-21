@@ -286,12 +286,50 @@ export function drawText(
   const text = resolveText(props?.children) || '文本';
   const fontSize = parseCSSPixel(s.fontSize, 14);
   const textColor = toCSS(s.color || '#333333');
+  const bgColor = toCSS(s.backgroundColor || 'transparent');
+  const borderRadius = parseCSSPixel(s.borderRadius, 0);
 
+  applyShadow(ctx, s);
+
+  // Background
+  if (bgColor !== 'transparent') {
+    if (borderRadius > 0) {
+      drawRoundRect(ctx, x, y, w, h, borderRadius);
+      ctx.fillStyle = bgColor;
+      ctx.fill();
+    } else {
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(x, y, w, h);
+    }
+  }
+
+  // Border
+  const bw = parseCSSPixel(s.borderWidth, 0);
+  if (bw > 0) {
+    if (borderRadius > 0) {
+      drawRoundRect(ctx, x, y, w, h, borderRadius);
+    } else {
+      ctx.strokeRect(x, y, w, h);
+    }
+    ctx.strokeStyle = toCSS(s.borderColor || '#d9d9d9');
+    ctx.lineWidth = bw;
+    if (s.borderStyle === 'dashed') ctx.setLineDash([bw * 3, bw * 3]);
+    else if (s.borderStyle === 'dotted') ctx.setLineDash([bw, bw]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  clearShadow(ctx);
+
+  // Text
   ctx.font = `${fontSize}px ${FONT_FAMILY}`;
   ctx.fillStyle = textColor;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(text, x, y);
+
+  const padX = bw > 0 ? bw + 2 : 2;
+  const padY = (h - fontSize) / 2;
+  ctx.fillText(text, x + padX, y + Math.max(0, padY));
 }
 
 export function drawImage(
@@ -300,20 +338,37 @@ export function drawImage(
   y: number,
   w: number,
   h: number,
-  _props: any,
+  props: any,
 ) {
-  const borderRadius = parseCSSPixel(_props?.style?.borderRadius, 4);
+  const s = props?.style || {};
+  const borderRadius = parseCSSPixel(s.borderRadius, 4);
+  const bgColor = toCSS(s.backgroundColor || '#f5f5f5');
+  const borderColor = toCSS(s.borderColor || '#d9d9d9');
+  const bw = parseCSSPixel(s.borderWidth, 1);
 
-  // Placeholder rectangle
+  applyShadow(ctx, s);
+
+  // Background
   drawRoundRect(ctx, x, y, w, h, borderRadius);
-  ctx.fillStyle = '#f5f5f5';
+  ctx.fillStyle = bgColor;
   ctx.fill();
-  ctx.strokeStyle = '#d9d9d9';
-  ctx.lineWidth = 1;
-  ctx.stroke();
 
-  // Icon
-  ctx.font = `${Math.min(w, h) * 0.2}px ${FONT_FAMILY}`;
+  // Border
+  if (bw > 0) {
+    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = bw;
+    if (s.borderStyle === 'dashed') ctx.setLineDash([bw * 3, bw * 3]);
+    else if (s.borderStyle === 'dotted') ctx.setLineDash([bw, bw]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  clearShadow(ctx);
+
+  // Placeholder icon
+  const iconSize = Math.min(w, h) * 0.18;
+  ctx.font = `${iconSize}px ${FONT_FAMILY}`;
   ctx.fillStyle = '#bfbfbf';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -332,25 +387,43 @@ export function drawCard(
   props: any,
   isEmpty: boolean,
 ) {
+  const s = props?.style || {};
   const title = resolveText(props?.title) || '卡片标题';
-  const borderRadius = parseCSSPixel(props?.style?.borderRadius, 8);
+  const borderRadius = parseCSSPixel(s.borderRadius, 8);
   const titleHeight = 36;
+  const bgColor = toCSS(s.backgroundColor || '#ffffff');
+  const borderColor = toCSS(s.borderColor || '#e8e8e8');
+  const bw = parseCSSPixel(s.borderWidth, 1);
+  const titleBg = toCSS(s.color || '#fafafa');
+  const titleTextColor = toCSS(s.color || '#333333');
+
+  applyShadow(ctx, s);
 
   // Card background
   drawRoundRect(ctx, x, y, w, h, borderRadius);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = bgColor;
   ctx.fill();
-  ctx.strokeStyle = '#e8e8e8';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+
+  // Border
+  if (bw > 0) {
+    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = bw;
+    if (s.borderStyle === 'dashed') ctx.setLineDash([bw * 3, bw * 3]);
+    else if (s.borderStyle === 'dotted') ctx.setLineDash([bw, bw]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  clearShadow(ctx);
 
   // Title bar background
   ctx.save();
   drawRoundRect(ctx, x, y, w, titleHeight, borderRadius);
   ctx.clip();
-  ctx.fillStyle = '#fafafa';
+  ctx.fillStyle = titleBg;
   ctx.fillRect(x, y, w, titleHeight);
-  ctx.strokeStyle = '#f0f0f0';
+  ctx.strokeStyle = toCSS(s.color || '#f0f0f0');
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, y + titleHeight);
@@ -358,15 +431,19 @@ export function drawCard(
   ctx.stroke();
   ctx.restore();
 
-  // Redraw border over the clipped area
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
-  ctx.strokeStyle = '#e8e8e8';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // Redraw border after title clip
+  if (bw > 0) {
+    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = bw;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
 
   // Title text
-  ctx.font = `13px ${FONT_FAMILY}`;
-  ctx.fillStyle = '#333333';
+  const titleFontSize = parseCSSPixel(s.fontSize, 13);
+  ctx.font = `${titleFontSize}px ${FONT_FAMILY}`;
+  ctx.fillStyle = titleTextColor;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(title, x + 12, y + titleHeight / 2);
