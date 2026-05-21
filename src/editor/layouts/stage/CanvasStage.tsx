@@ -188,6 +188,13 @@ const CanvasStage: React.FC = () => {
         };
       } else {
         selectComponent(null);
+        dragStateRef.current = {
+          type: 'pan',
+          startScreenX: e.clientX,
+          startScreenY: e.clientY,
+          startPanX: transformRef.current.panX,
+          startPanY: transformRef.current.panY,
+        };
       }
     }
   }, [components, selectComponent]);
