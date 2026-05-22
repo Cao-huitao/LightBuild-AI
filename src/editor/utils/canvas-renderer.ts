@@ -10,6 +10,8 @@ import {
   drawSpace,
   drawSelectionBox,
   drawGrid,
+  drawAlignmentGuides,
+  type AlignmentGuide,
 } from './canvas-drawers';
 
 const SPACE_GAPS: Record<string, number> = { small: 8, middle: 16, large: 24 };
@@ -24,12 +26,13 @@ export interface RenderOptions {
   canvasH: number;
   dpr: number;
   dragPreview?: { componentId: number; x: number; y: number };
+  alignmentGuides?: AlignmentGuide[];
   imageCache?: Map<string, HTMLImageElement>;
   onImageLoaded?: () => void;
 }
 
 export function renderCanvas(opts: RenderOptions) {
-  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded } = opts;
+  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded, alignmentGuides } = opts;
 
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -48,6 +51,10 @@ export function renderCanvas(opts: RenderOptions) {
 
   for (const comp of components) {
     renderComponent(ctx, comp, selectedComponentId, dragPreview, 0, 0, imageCache, onImageLoaded);
+  }
+
+  if (alignmentGuides?.length) {
+    drawAlignmentGuides(ctx, alignmentGuides);
   }
 
   ctx.restore();

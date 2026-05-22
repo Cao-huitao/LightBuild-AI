@@ -475,6 +475,41 @@ export function drawCard(
   }
 }
 
+export interface AlignmentGuide {
+  type: 'left' | 'right' | 'top' | 'bottom' | 'centerX' | 'centerY';
+  value: number;
+  segStart: number;
+  segEnd: number;
+}
+
+export function drawAlignmentGuides(
+  ctx: CanvasRenderingContext2D,
+  guides: AlignmentGuide[],
+) {
+  if (!guides.length) return;
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1;
+  for (const g of guides) {
+    const isH = g.type === 'left' || g.type === 'right' || g.type === 'centerX';
+    if (isH) {
+      ctx.strokeStyle = 'rgba(255, 59, 48, 0.8)';
+      ctx.beginPath();
+      ctx.moveTo(g.value, g.segStart);
+      ctx.lineTo(g.value, g.segEnd);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(255, 59, 48, 0.8)';
+      ctx.beginPath();
+      ctx.moveTo(g.segStart, g.value);
+      ctx.lineTo(g.segEnd, g.value);
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 export function drawSelectionBox(
   ctx: CanvasRenderingContext2D,
   x: number,

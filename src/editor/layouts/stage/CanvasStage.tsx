@@ -3,7 +3,85 @@ import { useDrop } from 'react-dnd';
 import { useComponents } from '../../stores/components';
 import { useCanvasTransform } from '../../hooks/useCanvasTransform';
 import { renderCanvas, hitTest, findComponentById, getAbsolutePosition } from '../../utils/canvas-renderer';
+import { measureComponent } from '../../utils/canvas-drawers';
+import type { AlignmentGuide } from '../../utils/canvas-drawers';
 import { screenToWorld } from '../../utils/coords';
+import type { Component } from '../../stores/components';
+
+const ALIGN_THRESHOLD = 5;
+
+function findAlignments(
+  dragComp: Component,
+  dragX: number,
+  dragY: number,
+  components: Component[],
+  ctx: CanvasRenderingContext2D,
+): AlignmentGuide[] {
+  const dragSize = measureComponent(dragComp, ctx);
+  const dr = { x: dragX, y: dragY, w: dragSize.width, h: dragSize.height };
+  const guides: AlignmentGuide[] = [];
+
+  const dEdges = {
+    left: dr.x,
+    right: dr.x + dr.w,
+    top: dr.y,
+    bottom: dr.y + dr.h,
+    cx: dr.x + dr.w / 2,
+    cy: dr.y + dr.h / 2,
+  };
+
+  // Collect all component rects recursively
+  const allRects: Array<{ id: number; x: number; y: number; w: number; h: number }> = [];
+  function collect(comps: Component[], px: number, py: number) {
+    for (const comp of comps) {
+      const compStyle = comp.props?.style || {};
+      const ml = typeof compStyle.marginLeft === 'number' ? compStyle.marginLeft : 0;
+      const mt = typeof compStyle.marginTop === 'number' ? compStyle.marginTop : 0;
+      const cx = (comp.x ?? 0) + px + ml;
+      const cy = (comp.y ?? 0) + py + mt;
+      const size = measureComponent(comp, ctx);
+      allRects.push({ id: comp.id, x: cx, y: cy, w: size.width, h: size.height });
+      if (comp.children?.length && comp.name === 'Space') {
+        collect(comp.children, cx + 16, cy + 16);
+      } else if (comp.children?.length && comp.name === 'Card') {
+        collect(comp.children, cx + 12, cy + 48);
+      }
+    }
+  }
+  collect(components, 0, 0);
+
+  for (const r of allRects) {
+    if (r.id === dragComp.id) continue;
+
+    const segXMin = Math.min(dr.x, r.x);
+    const segXMax = Math.max(dr.x + dr.w, r.x + r.w);
+    const segYMin = Math.min(dr.y, r.y);
+    const segYMax = Math.max(dr.y + dr.h, r.y + r.h);
+
+    const checks: Array<{ type: AlignmentGuide['type']; val: number; tar: number }> = [
+      { type: 'left',    val: dEdges.left,   tar: r.x },
+      { type: 'right',   val: dEdges.right,  tar: r.x + r.w },
+      { type: 'top',     val: dEdges.top,    tar: r.y },
+      { type: 'bottom',  val: dEdges.bottom, tar: r.y + r.h },
+      { type: 'centerX', val: dEdges.cx,     tar: r.x + r.w / 2 },
+      { type: 'centerY', val: dEdges.cy,     tar: r.y + r.h / 2 },
+    ];
+
+    for (const ck of checks) {
+      if (Math.abs(ck.val - ck.tar) < ALIGN_THRESHOLD) {
+        const isH = ck.type === 'left' || ck.type === 'right' || ck.type === 'centerX';
+        guides.push({
+          type: ck.type,
+          value: ck.tar,
+          segStart: (isH ? segYMin : segXMin) - 10,
+          segEnd: (isH ? segYMax : segXMax) + 10,
+        });
+      }
+    }
+  }
+
+  return guides;
+}
 
 const ACCEPT_TYPES = ['Button', 'Space', 'Input', 'Text', 'Image', 'Card'];
 
@@ -27,6 +105,7 @@ const CanvasStage: React.FC = () => {
     type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
   });
   const dragPreviewRef = useRef<{ componentId: number; x: number; y: number } | null>(null);
+  const alignmentRef = useRef<AlignmentGuide[]>([]);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const spaceRef = useRef(false);
   const dprRef = useRef(window.devicePixelRatio || 1);
@@ -62,6 +141,7 @@ const CanvasStage: React.FC = () => {
       dragPreview: dragPreviewRef.current ?? undefined,
       imageCache: imageCacheRef.current,
       onImageLoaded,
+      alignmentGuides: alignmentRef.current,
     });
   }, [components, selectedId, canvasSize, transform]);
 
@@ -225,11 +305,24 @@ const CanvasStage: React.FC = () => {
         const t = transformRef.current;
         const dx = (e.clientX - ds.startScreenX) / t.zoom;
         const dy = (e.clientY - ds.startScreenY) / t.zoom;
+        const px = (ds.startCompX ?? 0) + dx;
+        const py = (ds.startCompY ?? 0) + dy;
         dragPreviewRef.current = {
           componentId: ds.componentId,
-          x: (ds.startCompX ?? 0) + dx,
-          y: (ds.startCompY ?? 0) + dy,
+          x: px,
+          y: py,
         };
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const dragComp = findComponentById(components, ds.componentId);
+            if (dragComp) {
+              alignmentRef.current = findAlignments(dragComp, px, py, components, ctx);
+            }
+          }
+        }
         setRenderTick((tick) => tick + 1);
       }
     };
@@ -249,6 +342,7 @@ const CanvasStage: React.FC = () => {
       dragStateRef.current = {
         type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
       };
+      alignmentRef.current = [];
     };
 
     window.addEventListener('mousemove', onMouseMove);
@@ -257,7 +351,7 @@ const CanvasStage: React.FC = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [setTransform, updateComponentPosition]);
+  }, [setTransform, updateComponentPosition, components]);
 
   const isPanMode = spaceRef.current;
   const cursor = isPanMode ? 'grab' : (isOver ? 'copy' : 'default');
