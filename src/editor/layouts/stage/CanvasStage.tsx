@@ -34,11 +34,8 @@ function findAlignments(
   const allRects: Array<{ id: number; x: number; y: number; w: number; h: number }> = [];
   function collect(comps: Component[], px: number, py: number) {
     for (const comp of comps) {
-      const compStyle = comp.props?.style || {};
-      const ml = typeof compStyle.marginLeft === 'number' ? compStyle.marginLeft : 0;
-      const mt = typeof compStyle.marginTop === 'number' ? compStyle.marginTop : 0;
-      const cx = (comp.x ?? 0) + px + ml;
-      const cy = (comp.y ?? 0) + py + mt;
+      const cx = (comp.x ?? 0) + px;
+      const cy = (comp.y ?? 0) + py;
       const size = measureComponent(comp, ctx);
       allRects.push({ id: comp.id, x: cx, y: cy, w: size.width, h: size.height });
       if (comp.children?.length && comp.name === 'Space') {

@@ -64,11 +64,22 @@ function clearShadow(ctx: CanvasRenderingContext2D) {
   ctx.shadowColor = 'transparent';
 }
 
+export interface ComponentSize {
+  width: number;
+  height: number;
+  cw: number;
+  ch: number;
+  ox: number;
+  oy: number;
+}
+
 export function measureComponent(
   component: Component,
   ctx: CanvasRenderingContext2D,
-): { width: number; height: number } {
+): ComponentSize {
   const s = component.props?.style || {};
+  let cw: number;
+  let ch: number;
 
   switch (component.name) {
     case 'Button': {
@@ -76,64 +87,97 @@ export function measureComponent(
       const fontSize = parseCSSPixel(s.fontSize, 14);
       ctx.font = `${fontSize}px ${FONT_FAMILY}`;
       const textWidth = ctx.measureText(text).width;
-      return { width: parseCSSPixel(s.width, textWidth + 30), height: parseCSSPixel(s.height, 32) };
+      cw = parseCSSPixel(s.width, textWidth + 30);
+      ch = parseCSSPixel(s.height, 32);
+      break;
     }
     case 'Input':
-      return { width: parseCSSPixel(s.width, 180), height: parseCSSPixel(s.height, 32) };
+      cw = parseCSSPixel(s.width, 180);
+      ch = parseCSSPixel(s.height, 32);
+      break;
     case 'Text': {
       const text = resolveText(component.props?.children) || '文本';
       const fontSize = parseCSSPixel(s.fontSize, 14);
       ctx.font = `${fontSize}px ${FONT_FAMILY}`;
       const textWidth = ctx.measureText(text).width;
-      return { width: parseCSSPixel(s.width, textWidth + 4), height: parseCSSPixel(s.height, fontSize * 1.4) };
+      cw = parseCSSPixel(s.width, textWidth + 4);
+      ch = parseCSSPixel(s.height, fontSize * 1.4);
+      break;
     }
     case 'Image':
-      return { width: parseCSSPixel(s.width, 200), height: parseCSSPixel(s.height, 150) };
-    case 'Card':
-      return measureCard(component, ctx);
-    case 'Space':
-      return measureSpace(component, ctx);
+      cw = parseCSSPixel(s.width, 200);
+      ch = parseCSSPixel(s.height, 150);
+      break;
+    case 'Card': {
+      const cs = measureCard(component, ctx);
+      cw = cs.cw;
+      ch = cs.ch;
+      break;
+    }
+    case 'Space': {
+      const ss = measureSpace(component, ctx);
+      cw = ss.cw;
+      ch = ss.ch;
+      break;
+    }
     default:
-      return { width: 100, height: 32 };
+      cw = 100;
+      ch = 32;
   }
+
+  const ml = typeof s.marginLeft === 'number' ? s.marginLeft : 0;
+  const mr = typeof s.marginRight === 'number' ? s.marginRight : 0;
+  const mt = typeof s.marginTop === 'number' ? s.marginTop : 0;
+  const mb = typeof s.marginBottom === 'number' ? s.marginBottom : 0;
+
+  return { width: cw + ml + mr, height: ch + mt + mb, cw, ch, ox: ml, oy: mt };
+}
+
+function marginOf(style: any) {
+  return {
+    ml: typeof style?.marginLeft === 'number' ? style.marginLeft : 0,
+    mr: typeof style?.marginRight === 'number' ? style.marginRight : 0,
+    mt: typeof style?.marginTop === 'number' ? style.marginTop : 0,
+    mb: typeof style?.marginBottom === 'number' ? style.marginBottom : 0,
+  };
 }
 
 function measureSpace(
   component: Component,
   ctx: CanvasRenderingContext2D,
-): { width: number; height: number } {
+): ComponentSize {
   const children = component.children || [];
   const size = component.props?.size || 'middle';
   const gap = ({ small: 8, middle: 16, large: 24 } as Record<string, number>)[size] || 16;
   const padding = 16;
 
   if (children.length === 0) {
-    return { width: 320, height: 200 };
+    return { width: 320, height: 200, cw: 320, ch: 200, ox: 0, oy: 0 };
   }
 
   let totalWidth = padding;
-  let maxHeight = 0;
+  let maxTotalH = 0;
 
   for (const child of children) {
     const cs = measureComponent(child, ctx);
     totalWidth += cs.width + gap;
-    maxHeight = Math.max(maxHeight, cs.height);
+    maxTotalH = Math.max(maxTotalH, cs.height);
   }
 
   totalWidth = totalWidth - gap + padding;
-  return { width: totalWidth, height: maxHeight + padding * 2 };
+  return { width: totalWidth, height: maxTotalH + padding * 2, cw: totalWidth, ch: maxTotalH + padding * 2, ox: 0, oy: 0 };
 }
 
 function measureCard(
   component: Component,
   ctx: CanvasRenderingContext2D,
-): { width: number; height: number } {
+): ComponentSize {
   const children = component.children || [];
   const padding = 12;
   const titleHeight = 36;
 
   if (children.length === 0) {
-    return { width: 260, height: 160 };
+    return { width: 260, height: 160, cw: 260, ch: 160, ox: 0, oy: 0 };
   }
 
   let maxChildWidth = 0;
@@ -143,13 +187,11 @@ function measureCard(
     const cs = measureComponent(children[i], ctx);
     maxChildWidth = Math.max(maxChildWidth, cs.width);
     totalChildHeight += cs.height;
-    if (i < children.length - 1) totalChildHeight += 8; // gap
+    if (i < children.length - 1) totalChildHeight += 8;
   }
 
-  return {
-    width: Math.max(260, maxChildWidth + padding * 2),
-    height: titleHeight + totalChildHeight + padding * 2,
-  };
+  const h = titleHeight + totalChildHeight + padding * 2;
+  return { width: Math.max(260, maxChildWidth + padding * 2), height: h, cw: Math.max(260, maxChildWidth + padding * 2), ch: h, ox: 0, oy: 0 };
 }
 
 export function drawButton(
@@ -161,6 +203,8 @@ export function drawButton(
   props: any,
 ) {
   const s = props?.style || {};
+  const { ml, mr, mt, mb } = marginOf(s);
+  const cx = x + ml, cy = y + mt, cw = w - ml - mr, ch = h - mt - mb;
   const isPrimary = props?.type === 'primary';
 
   applyShadow(ctx, s);
@@ -168,7 +212,7 @@ export function drawButton(
   const bgColor = toCSS(s.backgroundColor || (isPrimary ? '#1677ff' : '#ffffff'));
   const borderRadius = parseCSSPixel(s.borderRadius, 6);
 
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
   ctx.fillStyle = bgColor;
   ctx.fill();
 
@@ -177,7 +221,7 @@ export function drawButton(
   if (!isPrimary || parseCSSPixel(s.borderWidth, 0) > 0) {
     const bw = parseCSSPixel(s.borderWidth, isPrimary ? 0 : 1);
     if (bw > 0) {
-      drawRoundRect(ctx, x, y, w, h, borderRadius);
+      drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
       ctx.strokeStyle = toCSS(s.borderColor || '#d9d9d9');
       ctx.lineWidth = bw;
       ctx.stroke();
@@ -192,7 +236,7 @@ export function drawButton(
   ctx.fillStyle = textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + w / 2, y + h / 2);
+  ctx.fillText(text, cx + cw / 2, cy + ch / 2);
 }
 
 export function drawInput(
@@ -204,18 +248,20 @@ export function drawInput(
   props: any,
 ) {
   const s = props?.style || {};
+  const { ml, mr, mt, mb } = marginOf(s);
+  const cx = x + ml, cy = y + mt, cw = w - ml - mr, ch = h - mt - mb;
   const borderRadius = parseCSSPixel(s.borderRadius, 6);
 
   applyShadow(ctx, s);
 
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
   ctx.fillStyle = toCSS(s.backgroundColor || '#ffffff');
   ctx.fill();
 
   clearShadow(ctx);
 
   const bw = parseCSSPixel(s.borderWidth, 1);
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
   ctx.strokeStyle = toCSS(s.borderColor || '#d9d9d9');
   ctx.lineWidth = bw;
   ctx.stroke();
@@ -229,9 +275,9 @@ export function drawInput(
   ctx.textBaseline = 'middle';
 
   ctx.save();
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
   ctx.clip();
-  ctx.fillText(placeholder, x + 12, y + h / 2);
+  ctx.fillText(placeholder, cx + 12, cy + ch / 2);
   ctx.restore();
 }
 
@@ -244,13 +290,17 @@ export function drawSpace(
   _props: any,
   isEmpty: boolean,
 ) {
+  const s = _props?.style || {};
+  const { ml, mr, mt, mb } = marginOf(s);
+  const cx = x + ml, cy = y + mt, cw = w - ml - mr, ch = h - mt - mb;
+
   ctx.fillStyle = 'rgba(0,0,0,0.02)';
-  ctx.fillRect(x, y, w, h);
+  ctx.fillRect(cx, cy, cw, ch);
 
   ctx.strokeStyle = '#d9d9d9';
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
-  ctx.strokeRect(x, y, w, h);
+  ctx.strokeRect(cx, cy, cw, ch);
   ctx.setLineDash([]);
 
   if (isEmpty) {
@@ -258,7 +308,7 @@ export function drawSpace(
     ctx.fillStyle = '#bfbfbf';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('拖入组件到此处', x + w / 2, y + h / 2);
+    ctx.fillText('拖入组件到此处', cx + cw / 2, cy + ch / 2);
   }
 }
 
@@ -271,6 +321,8 @@ export function drawText(
   props: any,
 ) {
   const s = props?.style || {};
+  const { ml, mr, mt, mb } = marginOf(s);
+  const cx = x + ml, cy = y + mt, cw = w - ml - mr, ch = h - mt - mb;
   const text = resolveText(props?.children) || '文本';
   const fontSize = parseCSSPixel(s.fontSize, 14);
   const textColor = toCSS(s.color || '#333333');
@@ -281,21 +333,21 @@ export function drawText(
 
   if (bgColor !== 'transparent') {
     if (borderRadius > 0) {
-      drawRoundRect(ctx, x, y, w, h, borderRadius);
+      drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
       ctx.fillStyle = bgColor;
       ctx.fill();
     } else {
       ctx.fillStyle = bgColor;
-      ctx.fillRect(x, y, w, h);
+      ctx.fillRect(cx, cy, cw, ch);
     }
   }
 
   const bw = parseCSSPixel(s.borderWidth, 0);
   if (bw > 0) {
     if (borderRadius > 0) {
-      drawRoundRect(ctx, x, y, w, h, borderRadius);
+      drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
     } else {
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(cx, cy, cw, ch);
     }
     ctx.strokeStyle = toCSS(s.borderColor || '#d9d9d9');
     ctx.lineWidth = bw;
@@ -313,8 +365,8 @@ export function drawText(
   ctx.textBaseline = 'top';
 
   const padX = bw > 0 ? bw + 2 : 2;
-  const padY = (h - fontSize) / 2;
-  ctx.fillText(text, x + padX, y + Math.max(0, padY));
+  const padY = (ch - fontSize) / 2;
+  ctx.fillText(text, cx + padX, cy + Math.max(0, padY));
 }
 
 export function drawImage(
@@ -328,6 +380,8 @@ export function drawImage(
   onImageLoaded?: () => void,
 ) {
   const s = props?.style || {};
+  const { ml, mr, mt, mb } = marginOf(s);
+  const cx = x + ml, cy = y + mt, cw = w - ml - mr, ch = h - mt - mb;
   const rawSrc = props?.src;
   const url: string = typeof rawSrc === 'object' ? (rawSrc.value || '') : (typeof rawSrc === 'string' ? rawSrc : '');
   const borderRadius = parseCSSPixel(s.borderRadius, 4);
@@ -335,21 +389,20 @@ export function drawImage(
   const borderColor = toCSS(s.borderColor || '#d9d9d9');
   const bw = parseCSSPixel(s.borderWidth, 1);
 
-  // Try to load/draw actual image
   let imageDrawn = false;
   if (url && imageCache) {
     const cached = imageCache.get(url);
     if (cached && cached.complete && cached.naturalWidth > 0) {
       ctx.save();
       if (borderRadius > 0) {
-        drawRoundRect(ctx, x, y, w, h, borderRadius);
+        drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
         ctx.clip();
       } else {
         ctx.beginPath();
-        ctx.rect(x, y, w, h);
+        ctx.rect(cx, cy, cw, ch);
         ctx.clip();
       }
-      ctx.drawImage(cached, x, y, w, h);
+      ctx.drawImage(cached, cx, cy, cw, ch);
       ctx.restore();
       imageDrawn = true;
     } else if (!cached) {
@@ -371,13 +424,13 @@ export function drawImage(
   applyShadow(ctx, s);
 
   if (!imageDrawn) {
-    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
     ctx.fillStyle = bgColor;
     ctx.fill();
   }
 
   if (bw > 0) {
-    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = bw;
     if (s.borderStyle === 'dashed') ctx.setLineDash([bw * 3, bw * 3]);
@@ -389,15 +442,15 @@ export function drawImage(
   clearShadow(ctx);
 
   if (!imageDrawn) {
-    const iconSize = Math.min(w, h) * 0.18;
+    const iconSize = Math.min(cw, ch) * 0.18;
     ctx.font = `${iconSize}px ${FONT_FAMILY}`;
     ctx.fillStyle = '#bfbfbf';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🖼', x + w / 2, y + h / 2 - 8);
+    ctx.fillText('🖼', cx + cw / 2, cy + ch / 2 - 8);
 
     ctx.font = `12px ${FONT_FAMILY}`;
-    ctx.fillText('Image', x + w / 2, y + h / 2 + 14);
+    ctx.fillText('Image', cx + cw / 2, cy + ch / 2 + 14);
   }
 }
 
@@ -411,6 +464,8 @@ export function drawCard(
   isEmpty: boolean,
 ) {
   const s = props?.style || {};
+  const { ml, mr, mt, mb } = marginOf(s);
+  const cx = x + ml, cy = y + mt, cw = w - ml - mr, ch = h - mt - mb;
   const title = resolveText(props?.title) || '卡片标题';
   const borderRadius = parseCSSPixel(s.borderRadius, 8);
   const titleHeight = 36;
@@ -422,12 +477,12 @@ export function drawCard(
 
   applyShadow(ctx, s);
 
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
+  drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
   ctx.fillStyle = bgColor;
   ctx.fill();
 
   if (bw > 0) {
-    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = bw;
     if (s.borderStyle === 'dashed') ctx.setLineDash([bw * 3, bw * 3]);
@@ -439,20 +494,20 @@ export function drawCard(
   clearShadow(ctx);
 
   ctx.save();
-  drawRoundRect(ctx, x, y, w, titleHeight, borderRadius);
+  drawRoundRect(ctx, cx, cy, cw, titleHeight, borderRadius);
   ctx.clip();
   ctx.fillStyle = titleBg;
-  ctx.fillRect(x, y, w, titleHeight);
+  ctx.fillRect(cx, cy, cw, titleHeight);
   ctx.strokeStyle = toCSS(s.borderColor || '#f0f0f0');
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(x, y + titleHeight);
-  ctx.lineTo(x + w, y + titleHeight);
+  ctx.moveTo(cx, cy + titleHeight);
+  ctx.lineTo(cx + cw, cy + titleHeight);
   ctx.stroke();
   ctx.restore();
 
   if (bw > 0) {
-    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    drawRoundRect(ctx, cx, cy, cw, ch, borderRadius);
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = bw;
     ctx.setLineDash([]);
@@ -464,14 +519,14 @@ export function drawCard(
   ctx.fillStyle = titleTextColor;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(title, x + 12, y + titleHeight / 2);
+  ctx.fillText(title, cx + 12, cy + titleHeight / 2);
 
   if (isEmpty) {
     ctx.font = `11px ${FONT_FAMILY}`;
     ctx.fillStyle = '#bfbfbf';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('拖入组件到此处', x + w / 2, y + titleHeight + (h - titleHeight) / 2);
+    ctx.fillText('拖入组件到此处', cx + cw / 2, cy + titleHeight + (ch - titleHeight) / 2);
   }
 }
 
