@@ -15,6 +15,7 @@ interface DropResult {
 const ComponentItem: React.FC<ComponentItemProps> = ({ name, description }) => {
   const ref = useRef<HTMLDivElement>(null);//绑定拖拽元素
   const addComponent = useComponents((state) => state.addComponent);
+  const selectComponent = useComponents((state) => state.selectComponent);
   
   const getDefaultProps = (componentName: string): any => {
     switch (componentName) {
@@ -59,21 +60,14 @@ const ComponentItem: React.FC<ComponentItemProps> = ({ name, description }) => {
       console.log('Adding component:', newComponent, 'to parentId:', parentId);
       
       addComponent(newComponent, parentId);
-
-      console.log('onDragEnd:', {
-        name: newComponent.name,
-        props: newComponent.props,
-        dropEffect: 'move',
-        id: newComponent.id,
-        parentId: parentId,
-      });
+      selectComponent(newId);
     },
     // dnd生命周期 收集拖拽状态 是否正在拖拽
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
     // 监听变化 重新生成拖拽
-  }), [name, addComponent]);
+  }), [name, addComponent, selectComponent]);
   // 绑定函数 绑定dom
   drag(ref);
 

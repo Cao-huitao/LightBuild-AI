@@ -76,31 +76,19 @@ export function measureComponent(
       const fontSize = parseCSSPixel(s.fontSize, 14);
       ctx.font = `${fontSize}px ${FONT_FAMILY}`;
       const textWidth = ctx.measureText(text).width;
-      return {
-        width: parseCSSPixel(s.width, textWidth + 30),
-        height: parseCSSPixel(s.height, 32),
-      };
+      return { width: parseCSSPixel(s.width, textWidth + 30), height: parseCSSPixel(s.height, 32) };
     }
     case 'Input':
-      return {
-        width: parseCSSPixel(s.width, 180),
-        height: parseCSSPixel(s.height, 32),
-      };
+      return { width: parseCSSPixel(s.width, 180), height: parseCSSPixel(s.height, 32) };
     case 'Text': {
       const text = resolveText(component.props?.children) || '文本';
       const fontSize = parseCSSPixel(s.fontSize, 14);
       ctx.font = `${fontSize}px ${FONT_FAMILY}`;
       const textWidth = ctx.measureText(text).width;
-      return {
-        width: parseCSSPixel(s.width, textWidth + 4),
-        height: parseCSSPixel(s.height, fontSize * 1.4),
-      };
+      return { width: parseCSSPixel(s.width, textWidth + 4), height: parseCSSPixel(s.height, fontSize * 1.4) };
     }
     case 'Image':
-      return {
-        width: parseCSSPixel(s.width, 200),
-        height: parseCSSPixel(s.height, 150),
-      };
+      return { width: parseCSSPixel(s.width, 200), height: parseCSSPixel(s.height, 150) };
     case 'Card':
       return measureCard(component, ctx);
     case 'Space':
@@ -291,7 +279,6 @@ export function drawText(
 
   applyShadow(ctx, s);
 
-  // Background
   if (bgColor !== 'transparent') {
     if (borderRadius > 0) {
       drawRoundRect(ctx, x, y, w, h, borderRadius);
@@ -303,7 +290,6 @@ export function drawText(
     }
   }
 
-  // Border
   const bw = parseCSSPixel(s.borderWidth, 0);
   if (bw > 0) {
     if (borderRadius > 0) {
@@ -321,7 +307,6 @@ export function drawText(
 
   clearShadow(ctx);
 
-  // Text
   ctx.font = `${fontSize}px ${FONT_FAMILY}`;
   ctx.fillStyle = textColor;
   ctx.textAlign = 'left';
@@ -339,21 +324,58 @@ export function drawImage(
   w: number,
   h: number,
   props: any,
+  imageCache?: Map<string, HTMLImageElement>,
+  onImageLoaded?: () => void,
 ) {
   const s = props?.style || {};
+  const rawSrc = props?.src;
+  const url: string = typeof rawSrc === 'object' ? (rawSrc.value || '') : (typeof rawSrc === 'string' ? rawSrc : '');
   const borderRadius = parseCSSPixel(s.borderRadius, 4);
   const bgColor = toCSS(s.backgroundColor || '#f5f5f5');
   const borderColor = toCSS(s.borderColor || '#d9d9d9');
   const bw = parseCSSPixel(s.borderWidth, 1);
 
+  // Try to load/draw actual image
+  let imageDrawn = false;
+  if (url && imageCache) {
+    const cached = imageCache.get(url);
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      ctx.save();
+      if (borderRadius > 0) {
+        drawRoundRect(ctx, x, y, w, h, borderRadius);
+        ctx.clip();
+      } else {
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+      }
+      ctx.drawImage(cached, x, y, w, h);
+      ctx.restore();
+      imageDrawn = true;
+    } else if (!cached) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        imageCache.set(url, img);
+        onImageLoaded?.();
+      };
+      img.onerror = () => {
+        imageCache.set(url, null as any);
+        onImageLoaded?.();
+      };
+      img.src = url;
+      imageCache.set(url, null as any);
+    }
+  }
+
   applyShadow(ctx, s);
 
-  // Background
-  drawRoundRect(ctx, x, y, w, h, borderRadius);
-  ctx.fillStyle = bgColor;
-  ctx.fill();
+  if (!imageDrawn) {
+    drawRoundRect(ctx, x, y, w, h, borderRadius);
+    ctx.fillStyle = bgColor;
+    ctx.fill();
+  }
 
-  // Border
   if (bw > 0) {
     drawRoundRect(ctx, x, y, w, h, borderRadius);
     ctx.strokeStyle = borderColor;
@@ -366,16 +388,17 @@ export function drawImage(
 
   clearShadow(ctx);
 
-  // Placeholder icon
-  const iconSize = Math.min(w, h) * 0.18;
-  ctx.font = `${iconSize}px ${FONT_FAMILY}`;
-  ctx.fillStyle = '#bfbfbf';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('🖼', x + w / 2, y + h / 2 - 8);
+  if (!imageDrawn) {
+    const iconSize = Math.min(w, h) * 0.18;
+    ctx.font = `${iconSize}px ${FONT_FAMILY}`;
+    ctx.fillStyle = '#bfbfbf';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🖼', x + w / 2, y + h / 2 - 8);
 
-  ctx.font = `12px ${FONT_FAMILY}`;
-  ctx.fillText('Image', x + w / 2, y + h / 2 + 14);
+    ctx.font = `12px ${FONT_FAMILY}`;
+    ctx.fillText('Image', x + w / 2, y + h / 2 + 14);
+  }
 }
 
 export function drawCard(
@@ -394,17 +417,15 @@ export function drawCard(
   const bgColor = toCSS(s.backgroundColor || '#ffffff');
   const borderColor = toCSS(s.borderColor || '#e8e8e8');
   const bw = parseCSSPixel(s.borderWidth, 1);
-  const titleBg = toCSS(s.color || '#fafafa');
+  const titleBg = toCSS(s.backgroundColor || '#fafafa');
   const titleTextColor = toCSS(s.color || '#333333');
 
   applyShadow(ctx, s);
 
-  // Card background
   drawRoundRect(ctx, x, y, w, h, borderRadius);
   ctx.fillStyle = bgColor;
   ctx.fill();
 
-  // Border
   if (bw > 0) {
     drawRoundRect(ctx, x, y, w, h, borderRadius);
     ctx.strokeStyle = borderColor;
@@ -417,13 +438,12 @@ export function drawCard(
 
   clearShadow(ctx);
 
-  // Title bar background
   ctx.save();
   drawRoundRect(ctx, x, y, w, titleHeight, borderRadius);
   ctx.clip();
   ctx.fillStyle = titleBg;
   ctx.fillRect(x, y, w, titleHeight);
-  ctx.strokeStyle = toCSS(s.color || '#f0f0f0');
+  ctx.strokeStyle = toCSS(s.borderColor || '#f0f0f0');
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, y + titleHeight);
@@ -431,7 +451,6 @@ export function drawCard(
   ctx.stroke();
   ctx.restore();
 
-  // Redraw border after title clip
   if (bw > 0) {
     drawRoundRect(ctx, x, y, w, h, borderRadius);
     ctx.strokeStyle = borderColor;
@@ -440,7 +459,6 @@ export function drawCard(
     ctx.stroke();
   }
 
-  // Title text
   const titleFontSize = parseCSSPixel(s.fontSize, 13);
   ctx.font = `${titleFontSize}px ${FONT_FAMILY}`;
   ctx.fillStyle = titleTextColor;
@@ -448,7 +466,6 @@ export function drawCard(
   ctx.textBaseline = 'middle';
   ctx.fillText(title, x + 12, y + titleHeight / 2);
 
-  // Empty placeholder
   if (isEmpty) {
     ctx.font = `11px ${FONT_FAMILY}`;
     ctx.fillStyle = '#bfbfbf';

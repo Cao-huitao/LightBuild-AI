@@ -16,6 +16,8 @@ interface DragState {
   componentId?: number;
   startCompX?: number;
   startCompY?: number;
+  baseX?: number;
+  baseY?: number;
 }
 
 const CanvasStage: React.FC = () => {
@@ -25,6 +27,7 @@ const CanvasStage: React.FC = () => {
     type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
   });
   const dragPreviewRef = useRef<{ componentId: number; x: number; y: number } | null>(null);
+  const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const spaceRef = useRef(false);
   const dprRef = useRef(window.devicePixelRatio || 1);
 
@@ -34,10 +37,14 @@ const CanvasStage: React.FC = () => {
   const updateComponentPosition = useComponents((s) => s.updateComponentPosition);
   const deleteComponent = useComponents((s) => s.deleteComponent);
 
-  const { transform, setTransform, transformRef, onWheel } = useCanvasTransform();
+  const { transform, setTransform, transformRef, setContainerRef: setTransformRef } = useCanvasTransform();
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [renderTick, setRenderTick] = useState(0);
+
+  const onImageLoaded = useCallback(() => {
+    setRenderTick((tick) => tick + 1);
+  }, []);
 
   const doRender = useCallback(() => {
     const canvas = canvasRef.current;
@@ -53,6 +60,8 @@ const CanvasStage: React.FC = () => {
       canvasH: canvasSize.height,
       dpr: dprRef.current,
       dragPreview: dragPreviewRef.current ?? undefined,
+      imageCache: imageCacheRef.current,
+      onImageLoaded,
     });
   }, [components, selectedId, canvasSize, transform]);
 
@@ -93,11 +102,12 @@ const CanvasStage: React.FC = () => {
     collect: (monitor) => ({ isOver: monitor.isOver() }),
   }), [components]);
 
-  // Container ref merging DnD + canvas container
+  // Container ref merging DnD + canvas container + transform wheel
   const setContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
     dropRef(node);
-  }, [dropRef]);
+    setTransformRef(node);
+  }, [dropRef, setTransformRef]);
 
   // ResizeObserver
   useEffect(() => {
@@ -176,6 +186,7 @@ const CanvasStage: React.FC = () => {
       if (hitId !== null) {
         selectComponent(hitId);
         const abs = getAbsolutePosition(components, hitId, ctx);
+        const hitComp = findComponentById(components, hitId);
         dragStateRef.current = {
           type: 'move',
           startScreenX: e.clientX,
@@ -185,6 +196,8 @@ const CanvasStage: React.FC = () => {
           componentId: hitId,
           startCompX: abs?.x ?? 0,
           startCompY: abs?.y ?? 0,
+          baseX: hitComp?.x ?? 0,
+          baseY: hitComp?.y ?? 0,
         };
       } else {
         selectComponent(null);
@@ -226,7 +239,9 @@ const CanvasStage: React.FC = () => {
       if (ds.type === 'move' && ds.componentId !== undefined) {
         const preview = dragPreviewRef.current;
         if (preview && (preview.x !== ds.startCompX || preview.y !== ds.startCompY)) {
-          updateComponentPosition(preview.componentId, Math.round(preview.x), Math.round(preview.y));
+          const newX = (ds.baseX ?? 0) + Math.round(preview.x) - (ds.startCompX ?? 0);
+          const newY = (ds.baseY ?? 0) + Math.round(preview.y) - (ds.startCompY ?? 0);
+          updateComponentPosition(preview.componentId, newX, newY);
         }
         dragPreviewRef.current = null;
         setRenderTick((tick) => tick + 1);
@@ -253,7 +268,6 @@ const CanvasStage: React.FC = () => {
       className="stage-container h-full w-full overflow-hidden relative"
       style={{ cursor, border: isOver ? '1px solid #1677ff' : 'none' }}
       onMouseDown={handleMouseDown}
-      onWheel={onWheel}
       onContextMenu={(e) => e.preventDefault()}
     >
       <canvas

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Form, Input, InputNumber, Select, ColorPicker } from 'antd';
 import { useEffect } from 'react';
 import { useComponents, useSelectedComponent } from '../../stores/components';
@@ -14,8 +14,13 @@ const ComponentStyle: React.FC = () => {
   const updateComponentStyles = useComponents((state) => state.updateComponentStyles);
   const curComponent = useSelectedComponent();
   const [form] = Form.useForm();
+  const prevIdRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (prevIdRef.current !== (curComponent?.id ?? null)) {
+      form.resetFields();
+      prevIdRef.current = curComponent?.id ?? null;
+    }
     form.setFieldsValue(curComponent?.props?.style || {});
   }, [curComponent, form]);
 

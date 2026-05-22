@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Form, Select, Input, Tooltip, Button, Space } from 'antd';
 import {
   CopyOutlined,
@@ -76,6 +76,7 @@ const ComponentAttr: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   const [form] = Form.useForm();
+  const prevIdRef = useRef<number | null>(null);
 
   // 复制组件ID
   const copyComponentId = async () => {
@@ -87,6 +88,10 @@ const ComponentAttr: React.FC = () => {
   };
 
   useEffect(() => {
+    if (prevIdRef.current !== (curComponent?.id ?? null)) {
+      form.resetFields();
+      prevIdRef.current = curComponent?.id ?? null;
+    }
     form.setFieldsValue(curComponent?.props);
   }, [curComponent, form]);
 

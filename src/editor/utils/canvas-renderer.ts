@@ -24,10 +24,12 @@ export interface RenderOptions {
   canvasH: number;
   dpr: number;
   dragPreview?: { componentId: number; x: number; y: number };
+  imageCache?: Map<string, HTMLImageElement>;
+  onImageLoaded?: () => void;
 }
 
 export function renderCanvas(opts: RenderOptions) {
-  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview } = opts;
+  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded } = opts;
 
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -45,7 +47,7 @@ export function renderCanvas(opts: RenderOptions) {
   );
 
   for (const comp of components) {
-    renderComponent(ctx, comp, selectedComponentId, dragPreview);
+    renderComponent(ctx, comp, selectedComponentId, dragPreview, 0, 0, imageCache, onImageLoaded);
   }
 
   ctx.restore();
@@ -58,6 +60,8 @@ function renderComponent(
   dragPreview?: { componentId: number; x: number; y: number },
   parentX = 0,
   parentY = 0,
+  imageCache?: Map<string, HTMLImageElement>,
+  onImageLoaded?: () => void,
 ) {
   let wx = (comp.x ?? 0) + parentX;
   let wy = (comp.y ?? 0) + parentY;
@@ -66,6 +70,10 @@ function renderComponent(
     wx = dragPreview.x;
     wy = dragPreview.y;
   }
+
+  const compStyle = comp.props?.style || {};
+  wx += typeof compStyle.marginLeft === 'number' ? compStyle.marginLeft : 0;
+  wy += typeof compStyle.marginTop === 'number' ? compStyle.marginTop : 0;
 
   const size = measureComponent(comp, ctx);
 
@@ -80,7 +88,7 @@ function renderComponent(
       drawText(ctx, wx, wy, size.width, size.height, comp.props);
       break;
     case 'Image':
-      drawImage(ctx, wx, wy, size.width, size.height, comp.props);
+      drawImage(ctx, wx, wy, size.width, size.height, comp.props, imageCache, onImageLoaded);
       break;
     case 'Card': {
       drawCard(ctx, wx, wy, size.width, size.height, comp.props, !comp.children?.length);
@@ -92,8 +100,10 @@ function renderComponent(
         let cy = wy + titleHeight + padding;
         for (const child of comp.children) {
           const childSize = measureComponent(child, ctx);
-          renderComponent(ctx, child, selectedId, dragPreview, wx + padding, cy);
-          cy += childSize.height + gap;
+          renderComponent(ctx, child, selectedId, dragPreview, wx + padding, cy, imageCache, onImageLoaded);
+          const childS = child.props?.style || {};
+          const mb = typeof childS.marginBottom === 'number' ? childS.marginBottom : 0;
+          cy += childSize.height + mb + gap;
         }
       }
       break;
@@ -107,8 +117,10 @@ function renderComponent(
         const cy = wy + SPACE_PAD;
         for (const child of comp.children) {
           const childSize = measureComponent(child, ctx);
-          renderComponent(ctx, child, selectedId, dragPreview, cx, cy);
-          cx += childSize.width + gap;
+          renderComponent(ctx, child, selectedId, dragPreview, cx, cy, imageCache, onImageLoaded);
+          const childS = child.props?.style || {};
+          const mr = typeof childS.marginRight === 'number' ? childS.marginRight : 0;
+          cx += childSize.width + mr + gap;
         }
       }
       break;
@@ -141,8 +153,11 @@ function hitTestComponent(
   parentX: number,
   parentY: number,
 ): number | null {
-  const compX = (comp.x ?? 0) + parentX;
-  const compY = (comp.y ?? 0) + parentY;
+  const compStyle = comp.props?.style || {};
+  const ml = typeof compStyle.marginLeft === 'number' ? compStyle.marginLeft : 0;
+  const mt = typeof compStyle.marginTop === 'number' ? compStyle.marginTop : 0;
+  const compX = (comp.x ?? 0) + parentX + ml;
+  const compY = (comp.y ?? 0) + parentY + mt;
   const size = measureComponent(comp, ctx);
 
   if (wx < compX || wx > compX + size.width || wy < compY || wy > compY + size.height) {
@@ -160,7 +175,9 @@ function hitTestComponent(
         const deep = hitTestComponent(child, wx, wy, ctx, cx, cy);
         return deep ?? child.id;
       }
-      cx += childSize.width + gap;
+      const childS = child.props?.style || {};
+      const mr = typeof childS.marginRight === 'number' ? childS.marginRight : 0;
+      cx += childSize.width + mr + gap;
     }
   }
 
@@ -176,7 +193,9 @@ function hitTestComponent(
         const deep = hitTestComponent(child, wx, wy, ctx, compX + padding, cy);
         return deep ?? child.id;
       }
-      cy += childSize.height + gap;
+      const childS = child.props?.style || {};
+      const mb = typeof childS.marginBottom === 'number' ? childS.marginBottom : 0;
+      cy += childSize.height + mb + gap;
     }
   }
 
@@ -202,16 +221,21 @@ export function getAbsolutePosition(
   function walk(comps: Component[], px: number, py: number, useLayout: boolean): { x: number; y: number } | null {
     let cx = px;
     for (const comp of comps) {
-      const compX = (comp.x ?? 0) + cx;
-      const compY = (comp.y ?? 0) + py;
+      const compStyle = comp.props?.style || {};
+      const ml = typeof compStyle.marginLeft === 'number' ? compStyle.marginLeft : 0;
+      const mt = typeof compStyle.marginTop === 'number' ? compStyle.marginTop : 0;
+      const compX = (comp.x ?? 0) + cx + ml;
+      const compY = (comp.y ?? 0) + py + mt;
       if (comp.id === targetId) return { x: compX, y: compY };
+      const mr = typeof compStyle.marginRight === 'number' ? compStyle.marginRight : 0;
+      const mb = typeof compStyle.marginBottom === 'number' ? compStyle.marginBottom : 0;
       if (comp.children?.length && comp.name === 'Space') {
         const childSize = measureComponent(comp, ctx);
         const found = walk(comp.children, compX + SPACE_PAD, compY + SPACE_PAD, true);
         if (found) return found;
         if (useLayout) {
           const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
-          cx += childSize.width + gap;
+          cx += childSize.width + mr + gap;
         }
       } else if (comp.children?.length && comp.name === 'Card') {
         const childSize = measureComponent(comp, ctx);
@@ -219,12 +243,12 @@ export function getAbsolutePosition(
         if (found) return found;
         if (useLayout) {
           const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
-          cx += childSize.width + gap;
+          cx += childSize.width + mr + gap;
         }
       } else if (useLayout) {
         const compSize = measureComponent(comp, ctx);
         const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
-        cx += compSize.width + gap;
+        cx += compSize.width + mr + gap;
       }
     }
     return null;

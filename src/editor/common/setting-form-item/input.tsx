@@ -13,6 +13,14 @@ interface Props {
   onChange?: (value: Value) => void;
 }
 
+function resolveDisplayValue(value: any): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (value && typeof value === 'object' && value.type === 'static') return value.value ?? '';
+  if (value && typeof value === 'object' && value.type === 'variable') return '';
+  return '';
+}
+
 const SettingFormItemInput: React.FC<Props> = ({ value, onChange }) => {
   const [visible, setVisible] = useState(false);
 
@@ -36,7 +44,7 @@ const SettingFormItemInput: React.FC<Props> = ({ value, onChange }) => {
     <div className='flex gap-[8px]'>
       <Input
         disabled={value?.type === 'variable'}
-        value={(value?.type === 'static' || !value) ? value?.value : ''}
+        value={resolveDisplayValue(value)}
         onChange={valueChange}
       />
       <SettingOutlined
