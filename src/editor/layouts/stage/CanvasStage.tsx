@@ -112,6 +112,8 @@ const CanvasStage: React.FC = () => {
   });
   const dragPreviewRef = useRef<{ componentId: number; x: number; y: number } | null>(null);
   const resizePreviewRef = useRef<{ componentId: number; x: number; y: number; w: number; h: number } | null>(null);
+  const insertionRef = useRef<{ x: number; y: number; length: number; horizontal: boolean } | null>(null);
+  const insertionStateRef = useRef<{ containerId: number; index: number } | null>(null);
   const alignmentRef = useRef<AlignmentGuide[]>([]);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const spaceRef = useRef(false);
@@ -148,6 +150,7 @@ const CanvasStage: React.FC = () => {
       dpr: dprRef.current,
       dragPreview: dragPreviewRef.current ?? undefined,
       resizePreview: resizePreviewRef.current ?? undefined,
+      insertionIndicator: insertionRef.current,
       imageCache: imageCacheRef.current,
       onImageLoaded,
       alignmentGuides: alignmentRef.current,
@@ -162,6 +165,49 @@ const CanvasStage: React.FC = () => {
   // Drop target
   const [{ isOver }, dropRef] = useDrop(() => ({
     accept: ACCEPT_TYPES,
+    hover: (_item, monitor) => {
+      const offset = monitor.getClientOffset();
+      if (!offset) { insertionRef.current = null; return; }
+      const canvas = canvasRef.current;
+      if (!canvas) { insertionRef.current = null; return; }
+      const rect = canvas.getBoundingClientRect();
+      const world = screenToWorld(offset.x, offset.y, rect, transformRef.current);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { insertionRef.current = null; return; }
+      const hitId = hitTest(components, world.x, world.y, ctx);
+      if (hitId === null) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
+      const hitComp = findComponentById(components, hitId);
+      if (!hitComp?.children) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
+      const abs = getAbsolutePosition(components, hitId, ctx);
+      if (!abs) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
+      const cs = measureComponent(hitComp, ctx);
+      const sx = abs.x + cs.ox, sy = abs.y + cs.oy;
+      if (hitComp.name === 'Space') {
+        const gap = ({ small: 8, middle: 16, large: 24 } as Record<string, number>)[hitComp.props?.size || 'middle'] || 16;
+        let cx = sx + 16;
+        let idx = 0;
+        for (const child of hitComp.children) {
+          const childCs = measureComponent(child, ctx);
+          if (world.x < cx + childCs.width / 2) break;
+          cx += childCs.width + gap;
+          idx++;
+        }
+        insertionRef.current = { x: cx - gap / 2, y: sy + 16, length: cs.ch - 32, horizontal: false };
+        insertionStateRef.current = { containerId: hitId, index: idx };
+      } else if (hitComp.name === 'Card') {
+        let cy = sy + 48;
+        let idx = 0;
+        for (const child of hitComp.children) {
+          const childCs = measureComponent(child, ctx);
+          if (world.y < cy + childCs.height / 2) break;
+          cy += childCs.height + 8;
+          idx++;
+        }
+        insertionRef.current = { x: sx + 12, y: cy - 4, length: cs.cw - 24, horizontal: true };
+        insertionStateRef.current = { containerId: hitId, index: idx };
+      }
+      setRenderTick(t => t + 1);
+    },
     drop: (_item, monitor) => {
       const offset = monitor.getClientOffset();
       if (!offset) return undefined;
@@ -173,17 +219,16 @@ const CanvasStage: React.FC = () => {
       if (!ctx) return { x: Math.round(world.x), y: Math.round(world.y) };
 
       const hitId = hitTest(components, world.x, world.y, ctx);
+      const is = insertionStateRef.current;
+      insertionRef.current = null;
+      insertionStateRef.current = null;
+      if (hitId !== null && is && is.containerId === hitId) {
+        return { id: hitId, index: is.index, x: Math.round(world.x), y: Math.round(world.y) };
+      }
       if (hitId !== null) {
         const hitComp = findComponentById(components, hitId);
-        if (hitComp?.name === 'Space') {
-          const abs = getAbsolutePosition(components, hitId, ctx);
-          if (abs) {
-            return {
-              id: hitId,
-              x: Math.round(world.x - abs.x - 16),
-              y: Math.round(world.y - abs.y - 16),
-            };
-          }
+        if (hitComp?.name === 'Space' || hitComp?.name === 'Card') {
+          return { id: hitId, index: hitComp.children?.length ?? 0, x: Math.round(world.x), y: Math.round(world.y) };
         }
       }
       return { x: Math.round(world.x), y: Math.round(world.y) };

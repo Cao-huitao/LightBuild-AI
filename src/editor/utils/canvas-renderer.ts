@@ -6,6 +6,7 @@ import {
   drawInput,
   drawText,
   drawResizeHandles,
+  drawInsertionLine,
   drawImage,
   drawCard,
   drawSpace,
@@ -28,13 +29,14 @@ export interface RenderOptions {
   dpr: number;
   dragPreview?: { componentId: number; x: number; y: number };
   resizePreview?: { componentId: number; x: number; y: number; w: number; h: number };
+  insertionIndicator?: { x: number; y: number; length: number; horizontal: boolean } | null;
   alignmentGuides?: AlignmentGuide[];
   imageCache?: Map<string, HTMLImageElement>;
   onImageLoaded?: () => void;
 }
 
 export function renderCanvas(opts: RenderOptions) {
-  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded, alignmentGuides } = opts;
+  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded, alignmentGuides, insertionIndicator } = opts;
 
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -54,6 +56,10 @@ export function renderCanvas(opts: RenderOptions) {
   for (const comp of components) {
     const { resizePreview } = opts;
     renderComponent(ctx, comp, selectedComponentId, dragPreview, 0, 0, imageCache, onImageLoaded, transform.zoom, resizePreview);
+  }
+
+  if (insertionIndicator) {
+    drawInsertionLine(ctx, insertionIndicator.x, insertionIndicator.y, insertionIndicator.length, insertionIndicator.horizontal);
   }
 
   if (alignmentGuides?.length) {

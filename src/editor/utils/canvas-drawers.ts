@@ -565,6 +565,29 @@ export function drawAlignmentGuides(
   ctx.restore();
 }
 
+export function drawInsertionLine(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  length: number,
+  horizontal: boolean,
+) {
+  ctx.save();
+  ctx.strokeStyle = '#1677ff';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  if (horizontal) {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + length, y);
+  } else {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y + length);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function drawResizeHandles(
   ctx: CanvasRenderingContext2D,
   x: number,

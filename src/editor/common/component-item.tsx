@@ -9,6 +9,7 @@ interface ComponentItemProps {
 
 interface DropResult {
   id?: number;
+  index?: number;
 }
 
 // 一个组件函数 接收name 和description
@@ -55,11 +56,9 @@ const ComponentItem: React.FC<ComponentItemProps> = ({ name, description }) => {
         props: getDefaultProps(item.type),
       };
 
-      // 如果 dropResult 存在且有 id，说明放置到了 Space 组件中  ，没有 就是根组件
-      const parentId = dropResult && dropResult.id !== undefined ? dropResult.id : undefined;
-      console.log('Adding component:', newComponent, 'to parentId:', parentId);
-      
-      addComponent(newComponent, parentId);
+      const parentId = dropResult?.id !== undefined ? dropResult.id : undefined;
+      const insertIndex = dropResult?.index;
+      addComponent(newComponent, parentId, insertIndex);
       selectComponent(newId);
     },
     // dnd生命周期 收集拖拽状态 是否正在拖拽

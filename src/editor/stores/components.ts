@@ -18,7 +18,7 @@ interface State {
 }
 
 interface Action {
-  addComponent: (component: Component, parentId?: number) => void;
+  addComponent: (component: Component, parentId?: number, index?: number) => void;
   selectComponent: (id: number | null) => void;
   updateComponentProps: (componentId: number, props: any) => void;
   updateComponentPosition: (componentId: number, x: number, y: number) => void;
@@ -44,22 +44,26 @@ function recordMutation(state: State, components: Component[]): Partial<State> {
 function addComponentRecursively(
   components: Component[],
   newComponent: Component,
-  parentId?: number
+  parentId?: number,
+  index?: number,
 ): Component[] {
   if (parentId === undefined) {
-    return [...components, newComponent];
+    const i = index ?? components.length;
+    const copy = [...components];
+    copy.splice(i, 0, newComponent);
+    return copy;
   }
   return components.map((component) => {
     if (component.id === parentId) {
-      return {
-        ...component,
-        children: [...(component.children || []), newComponent],
-      };
+      const children = [...(component.children || [])];
+      const i = index ?? children.length;
+      children.splice(i, 0, newComponent);
+      return { ...component, children };
     }
     if (component.children && component.children.length > 0) {
       return {
         ...component,
-        children: addComponentRecursively(component.children, newComponent, parentId),
+        children: addComponentRecursively(component.children, newComponent, parentId, index),
       };
     }
     return component;
@@ -246,9 +250,9 @@ export const useComponents = create<State & Action>((set) => ({
   history: [],
   future: [],
 
-  addComponent: (component, parentId) =>
+  addComponent: (component, parentId, index) =>
     set((state) => {
-      const newComponents = addComponentRecursively(state.components, component, parentId);
+      const newComponents = addComponentRecursively(state.components, component, parentId, index);
       return recordMutation(state, newComponents);
     }),
 
