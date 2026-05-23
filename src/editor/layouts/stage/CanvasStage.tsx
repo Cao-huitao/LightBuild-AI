@@ -82,8 +82,11 @@ function findAlignments(
 
 const ACCEPT_TYPES = ['Button', 'Space', 'Input', 'Text', 'Image', 'Card'];
 
+type HandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
 interface DragState {
-  type: 'none' | 'pan' | 'move';
+  type: 'none' | 'pan' | 'move' | 'resize';
+  handle?: HandleDir;
   startScreenX: number;
   startScreenY: number;
   startPanX: number;
@@ -93,6 +96,12 @@ interface DragState {
   startCompY?: number;
   baseX?: number;
   baseY?: number;
+  startW?: number;
+  startH?: number;
+  resizeBaseX?: number;
+  resizeBaseY?: number;
+  resizeBaseW?: number;
+  resizeBaseH?: number;
 }
 
 const CanvasStage: React.FC = () => {
@@ -102,6 +111,7 @@ const CanvasStage: React.FC = () => {
     type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
   });
   const dragPreviewRef = useRef<{ componentId: number; x: number; y: number } | null>(null);
+  const resizePreviewRef = useRef<{ componentId: number; x: number; y: number; w: number; h: number } | null>(null);
   const alignmentRef = useRef<AlignmentGuide[]>([]);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const spaceRef = useRef(false);
@@ -112,6 +122,7 @@ const CanvasStage: React.FC = () => {
   const selectComponent = useComponents((s) => s.selectComponent);
   const updateComponentPosition = useComponents((s) => s.updateComponentPosition);
   const deleteComponent = useComponents((s) => s.deleteComponent);
+  const updateComponentStyles = useComponents((s) => s.updateComponentStyles);
 
   const { transform, setTransform, transformRef, setContainerRef: setTransformRef } = useCanvasTransform();
 
@@ -136,6 +147,7 @@ const CanvasStage: React.FC = () => {
       canvasH: canvasSize.height,
       dpr: dprRef.current,
       dragPreview: dragPreviewRef.current ?? undefined,
+      resizePreview: resizePreviewRef.current ?? undefined,
       imageCache: imageCacheRef.current,
       onImageLoaded,
       alignmentGuides: alignmentRef.current,
@@ -234,6 +246,35 @@ const CanvasStage: React.FC = () => {
     };
   }, [selectedId, deleteComponent]);
 
+  function hitTestHandle(
+    comp: Component,
+    worldX: number,
+    worldY: number,
+    ctx: CanvasRenderingContext2D,
+  ): HandleDir | null {
+    const abs = getAbsolutePosition(components, comp.id, ctx);
+    if (!abs) return null;
+    const size = measureComponent(comp, ctx);
+    const sx = abs.x + size.ox, sy = abs.y + size.oy, sw = size.cw, sh = size.ch;
+    const hs = 10 / transformRef.current.zoom;
+    const points: Array<{ dir: HandleDir; x: number; y: number }> = [
+      { dir: 'nw', x: sx, y: sy },
+      { dir: 'n',  x: sx + sw / 2, y: sy },
+      { dir: 'ne', x: sx + sw, y: sy },
+      { dir: 'e',  x: sx + sw, y: sy + sh / 2 },
+      { dir: 'se', x: sx + sw, y: sy + sh },
+      { dir: 's',  x: sx + sw / 2, y: sy + sh },
+      { dir: 'sw', x: sx, y: sy + sh },
+      { dir: 'w',  x: sx, y: sy + sh / 2 },
+    ];
+    for (const p of points) {
+      if (Math.abs(worldX - p.x) < hs && Math.abs(worldY - p.y) < hs) {
+        return p.dir;
+      }
+    }
+    return null;
+  }
+
   // Mouse down on canvas
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -262,20 +303,43 @@ const CanvasStage: React.FC = () => {
 
       if (hitId !== null) {
         selectComponent(hitId);
-        const abs = getAbsolutePosition(components, hitId, ctx);
         const hitComp = findComponentById(components, hitId);
-        dragStateRef.current = {
-          type: 'move',
-          startScreenX: e.clientX,
-          startScreenY: e.clientY,
-          startPanX: 0,
-          startPanY: 0,
-          componentId: hitId,
-          startCompX: abs?.x ?? 0,
-          startCompY: abs?.y ?? 0,
-          baseX: hitComp?.x ?? 0,
-          baseY: hitComp?.y ?? 0,
-        };
+        const handle = hitTestHandle(hitComp!, world.x, world.y, ctx);
+        if (handle) {
+          const abs = getAbsolutePosition(components, hitId, ctx);
+          const size = measureComponent(hitComp!, ctx);
+          dragStateRef.current = {
+            type: 'resize',
+            handle,
+            startScreenX: e.clientX,
+            startScreenY: e.clientY,
+            startPanX: 0,
+            startPanY: 0,
+            componentId: hitId,
+            startCompX: abs?.x ?? 0,
+            startCompY: abs?.y ?? 0,
+            resizeBaseX: abs?.x ?? 0,
+            resizeBaseY: abs?.y ?? 0,
+            resizeBaseW: size.cw,
+            resizeBaseH: size.ch,
+            baseX: hitComp?.x ?? 0,
+            baseY: hitComp?.y ?? 0,
+          };
+        } else {
+          const abs = getAbsolutePosition(components, hitId, ctx);
+          dragStateRef.current = {
+            type: 'move',
+            startScreenX: e.clientX,
+            startScreenY: e.clientY,
+            startPanX: 0,
+            startPanY: 0,
+            componentId: hitId,
+            startCompX: abs?.x ?? 0,
+            startCompY: abs?.y ?? 0,
+            baseX: hitComp?.x ?? 0,
+            baseY: hitComp?.y ?? 0,
+          };
+        }
       } else {
         selectComponent(null);
         dragStateRef.current = {
@@ -321,6 +385,46 @@ const CanvasStage: React.FC = () => {
           }
         }
         setRenderTick((tick) => tick + 1);
+      } else if (ds.type === 'resize' && ds.componentId !== undefined && ds.handle) {
+        const t = transformRef.current;
+        const dx = (e.clientX - ds.startScreenX) / t.zoom;
+        const dy = (e.clientY - ds.startScreenY) / t.zoom;
+        const bw = ds.resizeBaseW ?? 100, bh = ds.resizeBaseH ?? 32;
+        const bx = ds.resizeBaseX ?? 0, by = ds.resizeBaseY ?? 0;
+        const MIN = 20;
+        const ratio = bw / bh;
+        let nw = bw, nh = bh, nx = bx, ny = by;
+
+        const h = ds.handle;
+        if (h === 'e')  { nw = Math.max(MIN, bw + dx); }
+        if (h === 'w')  { nw = Math.max(MIN, bw - dx); nx = bx + dx; }
+        if (h === 's')  { nh = Math.max(MIN, bh + dy); }
+        if (h === 'n')  { nh = Math.max(MIN, bh - dy); ny = by + dy; }
+        if (h === 'ne') { nw = Math.max(MIN, bw + dx); nh = nw / ratio; ny = by + bh - nh; }
+        if (h === 'sw') { nh = Math.max(MIN, bh + dy); nw = nh * ratio; nx = bx + bw - nw; }
+        if (h === 'nw') {
+          if (Math.abs(dx / bw) > Math.abs(dy / bh)) { nw = Math.max(MIN, bw - dx); nh = nw / ratio; }
+          else { nh = Math.max(MIN, bh - dy); nw = nh * ratio; }
+          nx = bx + bw - nw; ny = by + bh - nh;
+        }
+        if (h === 'se') {
+          if (Math.abs(dx / bw) > Math.abs(dy / bh)) { nw = Math.max(MIN, bw + dx); nh = nw / ratio; }
+          else { nh = Math.max(MIN, bh + dy); nw = nh * ratio; }
+        }
+
+        resizePreviewRef.current = { componentId: ds.componentId, x: nx, y: ny, w: nw, h: nh };
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const dragComp = findComponentById(components, ds.componentId);
+            if (dragComp) {
+              alignmentRef.current = findAlignments(dragComp, nx + nw / 2, ny + nh / 2, components, ctx);
+            }
+          }
+        }
+        setRenderTick((tick) => tick + 1);
       }
     };
 
@@ -335,6 +439,23 @@ const CanvasStage: React.FC = () => {
         }
         dragPreviewRef.current = null;
         setRenderTick((tick) => tick + 1);
+      } else if (ds.type === 'resize' && ds.componentId !== undefined) {
+        const rp = resizePreviewRef.current;
+        if (rp && ds.handle) {
+          const comp = findComponentById(components, ds.componentId);
+          const oldX = ds.baseX ?? 0, oldY = ds.baseY ?? 0;
+          if (rp.x !== ds.resizeBaseX || rp.y !== ds.resizeBaseY) {
+            const newX = oldX + Math.round(rp.x) - Math.round(ds.resizeBaseX ?? 0);
+            const newY = oldY + Math.round(rp.y) - Math.round(ds.resizeBaseY ?? 0);
+            updateComponentPosition(ds.componentId, newX, newY);
+          }
+          updateComponentStyles(ds.componentId, {
+            width: Math.round(rp.w),
+            height: Math.round(rp.h),
+          });
+        }
+        resizePreviewRef.current = null;
+        setRenderTick((tick) => tick + 1);
       }
       dragStateRef.current = {
         type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
@@ -348,7 +469,7 @@ const CanvasStage: React.FC = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [setTransform, updateComponentPosition, components]);
+  }, [setTransform, updateComponentPosition, updateComponentStyles, components]);
 
   const isPanMode = spaceRef.current;
   const cursor = isPanMode ? 'grab' : (isOver ? 'copy' : 'default');

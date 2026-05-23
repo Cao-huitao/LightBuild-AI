@@ -565,6 +565,36 @@ export function drawAlignmentGuides(
   ctx.restore();
 }
 
+export function drawResizeHandles(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  zoom: number,
+) {
+  const hs = 7 / zoom;
+  const hh = hs / 2;
+  const points = [
+    { x: x, y: y },           // nw
+    { x: x + w / 2, y: y },   // n
+    { x: x + w, y: y },       // ne
+    { x: x + w, y: y + h / 2 }, // e
+    { x: x + w, y: y + h },   // se
+    { x: x + w / 2, y: y + h }, // s
+    { x: x, y: y + h },       // sw
+    { x: x, y: y + h / 2 },   // w
+  ];
+  for (const p of points) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(p.x - hh, p.y - hh, hs, hs);
+    ctx.strokeStyle = 'rgb(66, 133, 244)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.strokeRect(p.x - hh, p.y - hh, hs, hs);
+  }
+}
+
 export function drawSelectionBox(
   ctx: CanvasRenderingContext2D,
   x: number,

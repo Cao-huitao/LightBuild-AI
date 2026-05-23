@@ -5,6 +5,7 @@ import {
   drawButton,
   drawInput,
   drawText,
+  drawResizeHandles,
   drawImage,
   drawCard,
   drawSpace,
@@ -26,6 +27,7 @@ export interface RenderOptions {
   canvasH: number;
   dpr: number;
   dragPreview?: { componentId: number; x: number; y: number };
+  resizePreview?: { componentId: number; x: number; y: number; w: number; h: number };
   alignmentGuides?: AlignmentGuide[];
   imageCache?: Map<string, HTMLImageElement>;
   onImageLoaded?: () => void;
@@ -50,7 +52,8 @@ export function renderCanvas(opts: RenderOptions) {
   );
 
   for (const comp of components) {
-    renderComponent(ctx, comp, selectedComponentId, dragPreview, 0, 0, imageCache, onImageLoaded);
+    const { resizePreview } = opts;
+    renderComponent(ctx, comp, selectedComponentId, dragPreview, 0, 0, imageCache, onImageLoaded, transform.zoom, resizePreview);
   }
 
   if (alignmentGuides?.length) {
@@ -69,6 +72,8 @@ function renderComponent(
   parentY = 0,
   imageCache?: Map<string, HTMLImageElement>,
   onImageLoaded?: () => void,
+  zoom?: number,
+  resizePreview?: RenderOptions['resizePreview'],
 ) {
   let wx = (comp.x ?? 0) + parentX;
   let wy = (comp.y ?? 0) + parentY;
@@ -78,7 +83,15 @@ function renderComponent(
     wy = dragPreview.y;
   }
 
-  const size = measureComponent(comp, ctx);
+  let size = measureComponent(comp, ctx);
+  if (resizePreview && resizePreview.componentId === comp.id) {
+    const rp = resizePreview;
+    const totalW = rp.w + size.ox + (size.width - size.cw - size.ox);
+    const totalH = rp.h + size.oy + (size.height - size.ch - size.oy);
+    size = { ...size, cw: rp.w, ch: rp.h, width: totalW, height: totalH };
+    wx = rp.x;
+    wy = rp.y;
+  }
 
   switch (comp.name) {
     case 'Button':
@@ -103,7 +116,7 @@ function renderComponent(
         let cy = wy + titleHeight + padding;
         for (const child of comp.children) {
           const childSize = measureComponent(child, ctx);
-          renderComponent(ctx, child, selectedId, dragPreview, wx + padding, cy, imageCache, onImageLoaded);
+          renderComponent(ctx, child, selectedId, dragPreview, wx + padding, cy, imageCache, onImageLoaded, zoom, resizePreview);
           cy += childSize.height + gap;
         }
       }
@@ -121,7 +134,7 @@ function renderComponent(
           const childSize = measureComponent(child, ctx);
           const childCY = topY + (spaceContentH - childSize.ch) / 2 - childSize.oy;
           const childCYClamped = Math.max(topY, childCY);
-          renderComponent(ctx, child, selectedId, dragPreview, cx, childCYClamped, imageCache, onImageLoaded);
+          renderComponent(ctx, child, selectedId, dragPreview, cx, childCYClamped, imageCache, onImageLoaded, zoom, resizePreview);
           cx += childSize.width + gap;
         }
       }
@@ -130,7 +143,11 @@ function renderComponent(
   }
 
   if (comp.id === selectedId) {
-    drawSelectionBox(ctx, wx + size.ox, wy + size.oy, size.cw, size.ch);
+    const sx = wx + size.ox, sy = wy + size.oy, sw = size.cw, sh = size.ch;
+    drawSelectionBox(ctx, sx, sy, sw, sh);
+    if (zoom) {
+      drawResizeHandles(ctx, sx, sy, sw, sh, zoom);
+    }
   }
 }
 
