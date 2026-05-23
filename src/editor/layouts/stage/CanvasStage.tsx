@@ -85,7 +85,7 @@ const ACCEPT_TYPES = ['Button', 'Space', 'Input', 'Text', 'Image', 'Card'];
 type HandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 interface DragState {
-  type: 'none' | 'pan' | 'move' | 'resize';
+  type: 'none' | 'pan' | 'move' | 'resize' | 'boxSelect';
   handle?: HandleDir;
   startScreenX: number;
   startScreenY: number;
@@ -114,14 +114,19 @@ const CanvasStage: React.FC = () => {
   const resizePreviewRef = useRef<{ componentId: number; x: number; y: number; w: number; h: number } | null>(null);
   const insertionRef = useRef<{ x: number; y: number; length: number; horizontal: boolean } | null>(null);
   const insertionStateRef = useRef<{ containerId: number; index: number } | null>(null);
+  const selectionRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const alignmentRef = useRef<AlignmentGuide[]>([]);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const spaceRef = useRef(false);
   const dprRef = useRef(window.devicePixelRatio || 1);
 
   const components = useComponents((s) => s.components);
-  const selectedId = useComponents((s) => s.selectedComponentId);
+  const selectedIds = useComponents((s) => s.selectedComponentIds);
   const selectComponent = useComponents((s) => s.selectComponent);
+  const toggleSelectComponent = useComponents((s) => s.toggleSelectComponent);
+  const selectComponents = useComponents((s) => s.selectComponents);
+  const clearSelection = useComponents((s) => s.clearSelection);
+  const deleteSelectedComponents = useComponents((s) => s.deleteSelectedComponents);
   const updateComponentPosition = useComponents((s) => s.updateComponentPosition);
   const deleteComponent = useComponents((s) => s.deleteComponent);
   const updateComponentStyles = useComponents((s) => s.updateComponentStyles);
@@ -143,7 +148,7 @@ const CanvasStage: React.FC = () => {
     renderCanvas({
       ctx,
       components,
-      selectedComponentId: selectedId,
+      selectedComponentIds: selectedIds,
       transform: transformRef.current,
       canvasW: canvasSize.width,
       canvasH: canvasSize.height,
@@ -155,7 +160,18 @@ const CanvasStage: React.FC = () => {
       onImageLoaded,
       alignmentGuides: alignmentRef.current,
     });
-  }, [components, selectedId, canvasSize, transform]);
+    // Draw selection rectangle
+    const sr = selectionRectRef.current;
+    if (sr) {
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(66, 133, 244, 0.8)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
+      ctx.fillStyle = 'rgba(66, 133, 244, 0.08)';
+      ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
+      ctx.setLineDash([]);
+    }
+  }, [components, selectedIds, canvasSize, transform]);
 
   // Store-driven re-renders
   useEffect(() => {
@@ -177,33 +193,37 @@ const CanvasStage: React.FC = () => {
       const hitId = hitTest(components, world.x, world.y, ctx);
       if (hitId === null) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
       const hitComp = findComponentById(components, hitId);
-      if (!hitComp?.children) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
+      const isContainer = hitComp?.name === 'Space' || hitComp?.name === 'Card';
+      if (!hitComp || !isContainer) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
       const abs = getAbsolutePosition(components, hitId, ctx);
       if (!abs) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
       const cs = measureComponent(hitComp, ctx);
+      const children = hitComp.children ?? [];
       const sx = abs.x + cs.ox, sy = abs.y + cs.oy;
       if (hitComp.name === 'Space') {
         const gap = ({ small: 8, middle: 16, large: 24 } as Record<string, number>)[hitComp.props?.size || 'middle'] || 16;
         let cx = sx + 16;
         let idx = 0;
-        for (const child of hitComp.children) {
+        for (const child of children) {
           const childCs = measureComponent(child, ctx);
           if (world.x < cx + childCs.width / 2) break;
           cx += childCs.width + gap;
           idx++;
         }
-        insertionRef.current = { x: cx - gap / 2, y: sy + 16, length: cs.ch - 32, horizontal: false };
+        const len = Math.max(cs.ch - 32, 32);
+        insertionRef.current = { x: cx - gap / 2, y: sy + 16, length: len, horizontal: false };
         insertionStateRef.current = { containerId: hitId, index: idx };
       } else if (hitComp.name === 'Card') {
         let cy = sy + 48;
         let idx = 0;
-        for (const child of hitComp.children) {
+        for (const child of children) {
           const childCs = measureComponent(child, ctx);
           if (world.y < cy + childCs.height / 2) break;
           cy += childCs.height + 8;
           idx++;
         }
-        insertionRef.current = { x: sx + 12, y: cy - 4, length: cs.cw - 24, horizontal: true };
+        const len = Math.max(cs.cw - 24, 48);
+        insertionRef.current = { x: sx + 12, y: cy - 4, length: len, horizontal: true };
         insertionStateRef.current = { containerId: hitId, index: idx };
       }
       setRenderTick(t => t + 1);
@@ -273,10 +293,14 @@ const CanvasStage: React.FC = () => {
         spaceRef.current = true;
         e.preventDefault();
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId !== null) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
         if (document.activeElement === document.body || document.activeElement === containerRef.current) {
           e.preventDefault();
-          deleteComponent(selectedId);
+          if (selectedIds.length > 1) {
+            deleteSelectedComponents();
+          } else {
+            deleteComponent(selectedIds[0]);
+          }
         }
       }
     };
@@ -289,7 +313,7 @@ const CanvasStage: React.FC = () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [selectedId, deleteComponent]);
+  }, [selectedIds, deleteComponent, deleteSelectedComponents]);
 
   function hitTestHandle(
     comp: Component,
@@ -347,9 +371,16 @@ const CanvasStage: React.FC = () => {
       const hitId = hitTest(components, world.x, world.y, ctx);
 
       if (hitId !== null) {
-        selectComponent(hitId);
+        if (e.shiftKey) {
+          toggleSelectComponent(hitId);
+          return;
+        }
+        if (!selectedIds.includes(hitId)) {
+          selectComponent(hitId);
+        }
+        const multiDrag = selectedIds.length > 1 && selectedIds.includes(hitId);
         const hitComp = findComponentById(components, hitId);
-        const handle = hitTestHandle(hitComp!, world.x, world.y, ctx);
+        const handle = !multiDrag ? hitTestHandle(hitComp!, world.x, world.y, ctx) : null;
         if (handle) {
           const abs = getAbsolutePosition(components, hitId, ctx);
           const size = measureComponent(hitComp!, ctx);
@@ -386,13 +417,15 @@ const CanvasStage: React.FC = () => {
           };
         }
       } else {
-        selectComponent(null);
+        clearSelection();
         dragStateRef.current = {
-          type: 'pan',
+          type: 'boxSelect',
           startScreenX: e.clientX,
           startScreenY: e.clientY,
-          startPanX: transformRef.current.panX,
-          startPanY: transformRef.current.panY,
+          startPanX: 0,
+          startPanY: 0,
+          startCompX: world.x,
+          startCompY: world.y,
         };
       }
     }
@@ -470,11 +503,54 @@ const CanvasStage: React.FC = () => {
           }
         }
         setRenderTick((tick) => tick + 1);
+      } else if (ds.type === 'boxSelect') {
+        const t = transformRef.current;
+        const dx = (e.clientX - ds.startScreenX) / t.zoom;
+        const dy = (e.clientY - ds.startScreenY) / t.zoom;
+        const sx = (ds.startCompX ?? 0), sy = (ds.startCompY ?? 0);
+        selectionRectRef.current = {
+          x: Math.min(sx, sx + dx),
+          y: Math.min(sy, sy + dy),
+          w: Math.abs(dx),
+          h: Math.abs(dy),
+        };
+        setRenderTick((tick) => tick + 1);
       }
     };
 
     const onMouseUp = (_e: MouseEvent) => {
       const ds = dragStateRef.current;
+      if (ds.type === 'boxSelect') {
+        const sr = selectionRectRef.current;
+        selectionRectRef.current = null;
+        if (sr && sr.w > 2 && sr.h > 2) {
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              const ids: number[] = [];
+              function collectInRect(comps: Component[], px: number, py: number) {
+                for (const comp of comps) {
+                  const cx = (comp.x ?? 0) + px;
+                  const cy = (comp.y ?? 0) + py;
+                  const sz = measureComponent(comp, ctx);
+                  if (cx >= sr.x && cy >= sr.y && cx + sz.width <= sr.x + sr.w && cy + sz.height <= sr.y + sr.h) {
+                    ids.push(comp.id);
+                  }
+                  if (comp.children?.length && (comp.name === 'Space' || comp.name === 'Card')) {
+                    const ox = comp.name === 'Space' ? 16 : 12;
+                    const oy = comp.name === 'Space' ? 16 : 48;
+                    collectInRect(comp.children, cx + ox, cy + oy);
+                  }
+                }
+              }
+              collectInRect(components, 0, 0);
+              selectComponents(ids);
+            }
+          }
+        }
+        setRenderTick((tick) => tick + 1);
+      }
       if (ds.type === 'move' && ds.componentId !== undefined) {
         const preview = dragPreviewRef.current;
         if (preview && (preview.x !== ds.startCompX || preview.y !== ds.startCompY)) {
@@ -506,6 +582,7 @@ const CanvasStage: React.FC = () => {
         type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
       };
       alignmentRef.current = [];
+      selectionRectRef.current = null;
     };
 
     window.addEventListener('mousemove', onMouseMove);

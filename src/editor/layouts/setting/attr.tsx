@@ -67,7 +67,8 @@ const componentSettingMap: Record<string, any[]> = {
 };
 
 const ComponentAttr: React.FC = () => {
-  const selectedComponentId = useComponents((state) => state.selectedComponentId);
+  const selectedIds = useComponents((state) => state.selectedComponentIds);
+const selectedComponentId = selectedIds[0] ?? null;
   const updateComponentProps = useComponents((state) => state.updateComponentProps);
   const deleteComponent = useComponents((state) => state.deleteComponent);
   const copyComponent = useComponents((state) => state.copyComponent);

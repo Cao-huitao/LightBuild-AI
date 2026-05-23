@@ -22,7 +22,7 @@ const SPACE_PAD = 16;
 export interface RenderOptions {
   ctx: CanvasRenderingContext2D;
   components: Component[];
-  selectedComponentId: number | null;
+  selectedComponentIds: number[];
   transform: ViewTransform;
   canvasW: number;
   canvasH: number;
@@ -36,7 +36,7 @@ export interface RenderOptions {
 }
 
 export function renderCanvas(opts: RenderOptions) {
-  const { ctx, components, selectedComponentId, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded, alignmentGuides, insertionIndicator } = opts;
+  const { ctx, components, selectedComponentIds, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded, alignmentGuides, insertionIndicator } = opts;
 
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -55,7 +55,7 @@ export function renderCanvas(opts: RenderOptions) {
 
   for (const comp of components) {
     const { resizePreview } = opts;
-    renderComponent(ctx, comp, selectedComponentId, dragPreview, 0, 0, imageCache, onImageLoaded, transform.zoom, resizePreview);
+    renderComponent(ctx, comp, selectedComponentIds, dragPreview, 0, 0, imageCache, onImageLoaded, transform.zoom, resizePreview);
   }
 
   if (insertionIndicator) {
@@ -72,7 +72,7 @@ export function renderCanvas(opts: RenderOptions) {
 function renderComponent(
   ctx: CanvasRenderingContext2D,
   comp: Component,
-  selectedId: number | null,
+  selectedIds: number[],
   dragPreview?: { componentId: number; x: number; y: number },
   parentX = 0,
   parentY = 0,
@@ -122,7 +122,7 @@ function renderComponent(
         let cy = wy + titleHeight + padding;
         for (const child of comp.children) {
           const childSize = measureComponent(child, ctx);
-          renderComponent(ctx, child, selectedId, dragPreview, wx + padding, cy, imageCache, onImageLoaded, zoom, resizePreview);
+          renderComponent(ctx, child, selectedIds, dragPreview, wx + padding, cy, imageCache, onImageLoaded, zoom, resizePreview);
           cy += childSize.height + gap;
         }
       }
@@ -140,7 +140,7 @@ function renderComponent(
           const childSize = measureComponent(child, ctx);
           const childCY = topY + (spaceContentH - childSize.ch) / 2 - childSize.oy;
           const childCYClamped = Math.max(topY, childCY);
-          renderComponent(ctx, child, selectedId, dragPreview, cx, childCYClamped, imageCache, onImageLoaded, zoom, resizePreview);
+          renderComponent(ctx, child, selectedIds, dragPreview, cx, childCYClamped, imageCache, onImageLoaded, zoom, resizePreview);
           cx += childSize.width + gap;
         }
       }
@@ -148,7 +148,7 @@ function renderComponent(
     }
   }
 
-  if (comp.id === selectedId) {
+  if (selectedIds.includes(comp.id)) {
     const sx = wx + size.ox, sy = wy + size.oy, sw = size.cw, sh = size.ch;
     drawSelectionBox(ctx, sx, sy, sw, sh);
     if (zoom) {

@@ -11,7 +11,7 @@ export interface Component {
 
 interface State {
   components: Component[];
-  selectedComponentId: number | null;
+  selectedComponentIds: number[];
   mode: 'edit' | 'preview';
   history: Component[][];
   future: Component[][];
@@ -20,10 +20,14 @@ interface State {
 interface Action {
   addComponent: (component: Component, parentId?: number, index?: number) => void;
   selectComponent: (id: number | null) => void;
+  toggleSelectComponent: (id: number) => void;
+  selectComponents: (ids: number[]) => void;
+  clearSelection: () => void;
   updateComponentProps: (componentId: number, props: any) => void;
   updateComponentPosition: (componentId: number, x: number, y: number) => void;
   updateComponentStyles: (componentId: number, styles: any) => void;
   deleteComponent: (componentId: number) => void;
+  deleteSelectedComponents: () => void;
   copyComponent: (componentId: number) => void;
   moveComponent: (componentId: number, direction: 'up' | 'down') => void;
   undo: () => void;
@@ -245,7 +249,7 @@ function cloneComponentTree(component: Component): Component {
 
 export const useComponents = create<State & Action>((set) => ({
   components: [],
-  selectedComponentId: null,
+  selectedComponentIds: [],
   mode: 'edit',
   history: [],
   future: [],
@@ -256,7 +260,19 @@ export const useComponents = create<State & Action>((set) => ({
       return recordMutation(state, newComponents);
     }),
 
-  selectComponent: (id) => set({ selectedComponentId: id }),
+  selectComponent: (id) => set({ selectedComponentIds: id != null ? [id] : [] }),
+
+  toggleSelectComponent: (id) =>
+    set((state) => {
+      const ids = state.selectedComponentIds.includes(id)
+        ? state.selectedComponentIds.filter((i) => i !== id)
+        : [...state.selectedComponentIds, id];
+      return { selectedComponentIds: ids };
+    }),
+
+  selectComponents: (ids) => set({ selectedComponentIds: ids }),
+
+  clearSelection: () => set({ selectedComponentIds: [] }),
 
   updateComponentProps: (componentId, props) =>
     set((state) => {
@@ -275,8 +291,19 @@ export const useComponents = create<State & Action>((set) => ({
       const newComponents = removeComponentRecursively(state.components, componentId);
       return {
         ...recordMutation(state, newComponents),
-        selectedComponentId:
-          state.selectedComponentId === componentId ? null : state.selectedComponentId,
+        selectedComponentIds: state.selectedComponentIds.filter((id) => id !== componentId),
+      };
+    }),
+
+  deleteSelectedComponents: () =>
+    set((state) => {
+      let newComponents = state.components;
+      for (const id of state.selectedComponentIds) {
+        newComponents = removeComponentRecursively(newComponents, id);
+      }
+      return {
+        ...recordMutation(state, newComponents),
+        selectedComponentIds: [],
       };
     }),
 
@@ -342,8 +369,14 @@ export const useComponents = create<State & Action>((set) => ({
 
 export const useSelectedComponent = () => {
   const components = useComponents((state) => state.components);
-  const selectedComponentId = useComponents((state) => state.selectedComponentId);
+  const selectedComponentIds = useComponents((state) => state.selectedComponentIds);
 
-  if (!selectedComponentId) return null;
-  return findComponentById(components, selectedComponentId);
+  if (selectedComponentIds.length === 0) return null;
+  return findComponentById(components, selectedComponentIds[0]);
+};
+
+export const useSelectedComponents = () => {
+  const components = useComponents((state) => state.components);
+  const selectedComponentIds = useComponents((state) => state.selectedComponentIds);
+  return selectedComponentIds.map((id) => findComponentById(components, id)).filter(Boolean) as Component[];
 };

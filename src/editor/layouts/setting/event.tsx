@@ -36,7 +36,8 @@ const componentMethodsMap: Record<string, any[]> = {
 
 const ComponentEvent: React.FC = () => {
   const curComponent = useSelectedComponent();
-  const selectedComponentId = useComponents((state) => state.selectedComponentId);
+  const selectedIds = useComponents((state) => state.selectedComponentIds);
+  const selectedComponentId = selectedIds[0] ?? null;
   const updateComponentProps = useComponents((state) => state.updateComponentProps);
   const components = useComponents((state) => state.components);
   const variables = useVariablesStore((state) => state.variables);

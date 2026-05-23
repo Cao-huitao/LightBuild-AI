@@ -10,7 +10,8 @@ const borderStyleOptions = [
 ];
 
 const ComponentStyle: React.FC = () => {
-  const selectedComponentId = useComponents((state) => state.selectedComponentId);
+  const selectedIds = useComponents((state) => state.selectedComponentIds);
+  const selectedComponentId = selectedIds[0] ?? null;
   const updateComponentStyles = useComponents((state) => state.updateComponentStyles);
   const curComponent = useSelectedComponent();
   const [form] = Form.useForm();
