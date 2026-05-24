@@ -15,4 +15,12 @@ export interface Component {
    * 子组件
    */
   children?: Component[];
+  /**
+   * x坐标位置
+   */
+  x?: number;
+  /**
+   * y坐标位置
+   */
+  y?: number;
 }

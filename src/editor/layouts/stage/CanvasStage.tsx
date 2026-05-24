@@ -84,6 +84,14 @@ const ACCEPT_TYPES = ['Button', 'Space', 'Input', 'Text', 'Image', 'Card'];
 
 type HandleDir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
+interface DragTarget {
+  componentId: number;
+  startCompX: number;
+  startCompY: number;
+  baseX: number;
+  baseY: number;
+}
+
 interface DragState {
   type: 'none' | 'pan' | 'move' | 'resize' | 'boxSelect';
   handle?: HandleDir;
@@ -102,6 +110,7 @@ interface DragState {
   resizeBaseY?: number;
   resizeBaseW?: number;
   resizeBaseH?: number;
+  targets?: DragTarget[];
 }
 
 const CanvasStage: React.FC = () => {
@@ -110,7 +119,7 @@ const CanvasStage: React.FC = () => {
   const dragStateRef = useRef<DragState>({
     type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,
   });
-  const dragPreviewRef = useRef<{ componentId: number; x: number; y: number } | null>(null);
+  const dragPreviewRef = useRef<Array<{ componentId: number; x: number; y: number }>>([]);
   const resizePreviewRef = useRef<{ componentId: number; x: number; y: number; w: number; h: number } | null>(null);
   const insertionRef = useRef<{ x: number; y: number; length: number; horizontal: boolean } | null>(null);
   const insertionStateRef = useRef<{ containerId: number; index: number } | null>(null);
@@ -153,24 +162,14 @@ const CanvasStage: React.FC = () => {
       canvasW: canvasSize.width,
       canvasH: canvasSize.height,
       dpr: dprRef.current,
-      dragPreview: dragPreviewRef.current ?? undefined,
+      dragPreview: dragPreviewRef.current.length > 0 ? dragPreviewRef.current : undefined,
       resizePreview: resizePreviewRef.current ?? undefined,
       insertionIndicator: insertionRef.current,
       imageCache: imageCacheRef.current,
       onImageLoaded,
       alignmentGuides: alignmentRef.current,
+      selectionRect: selectionRectRef.current,
     });
-    // Draw selection rectangle
-    const sr = selectionRectRef.current;
-    if (sr) {
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = 'rgba(66, 133, 244, 0.8)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(sr.x, sr.y, sr.w, sr.h);
-      ctx.fillStyle = 'rgba(66, 133, 244, 0.08)';
-      ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
-      ctx.setLineDash([]);
-    }
   }, [components, selectedIds, canvasSize, transform]);
 
   // Store-driven re-renders
@@ -346,6 +345,7 @@ const CanvasStage: React.FC = () => {
 
   // Mouse down on canvas
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    console.log('shiftKey:', e.shiftKey);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -371,14 +371,22 @@ const CanvasStage: React.FC = () => {
       const hitId = hitTest(components, world.x, world.y, ctx);
 
       if (hitId !== null) {
-        if (e.shiftKey) {
+        if (e.shiftKey && hitId) {
+          console.log('before toggle:', useComponents.getState().selectedComponentIds);
           toggleSelectComponent(hitId);
+          console.log('after toggle:', useComponents.getState().selectedComponentIds);
           return;
         }
-        if (!selectedIds.includes(hitId)) {
+        console.log('=== multiDrag gate ===');
+        console.log('selectedComponentIds:', selectedIds);
+        console.log('length:', selectedIds.length);
+        console.log('hitId:', hitId, 'type:', typeof hitId);
+        console.log('includes?', selectedIds.includes(hitId));
+        console.log('raw condition result:', selectedIds.length > 1 && selectedIds.includes(hitId));
+        const multiDrag = selectedIds.length > 1 && selectedIds.includes(hitId);
+        if (!multiDrag && !selectedIds.includes(hitId)) {
           selectComponent(hitId);
         }
-        const multiDrag = selectedIds.length > 1 && selectedIds.includes(hitId);
         const hitComp = findComponentById(components, hitId);
         const handle = !multiDrag ? hitTestHandle(hitComp!, world.x, world.y, ctx) : null;
         if (handle) {
@@ -402,7 +410,22 @@ const CanvasStage: React.FC = () => {
             baseY: hitComp?.y ?? 0,
           };
         } else {
-          const abs = getAbsolutePosition(components, hitId, ctx);
+          const idsToMove = multiDrag ? selectedIds : [hitId];
+          const targets: DragTarget[] = [];
+          for (const id of idsToMove) {
+            const c = findComponentById(components, id);
+            const abs = getAbsolutePosition(components, id, ctx);
+            if (c && abs) {
+              targets.push({
+                componentId: id,
+                startCompX: abs.x,
+                startCompY: abs.y,
+                baseX: c.x ?? 0,
+                baseY: c.y ?? 0,
+              });
+            }
+          }
+          console.log('[mousedown] multiDrag:', multiDrag, 'targets.length:', targets.length);
           dragStateRef.current = {
             type: 'move',
             startScreenX: e.clientX,
@@ -410,13 +433,15 @@ const CanvasStage: React.FC = () => {
             startPanX: 0,
             startPanY: 0,
             componentId: hitId,
-            startCompX: abs?.x ?? 0,
-            startCompY: abs?.y ?? 0,
-            baseX: hitComp?.x ?? 0,
-            baseY: hitComp?.y ?? 0,
+            startCompX: targets[0]?.startCompX ?? 0,
+            startCompY: targets[0]?.startCompY ?? 0,
+            baseX: targets[0]?.baseX ?? 0,
+            baseY: targets[0]?.baseY ?? 0,
+            targets,
           };
         }
       } else {
+        if (e.shiftKey) return;  // Shift+空白 → 保持选中不变
         clearSelection();
         dragStateRef.current = {
           type: 'boxSelect',
@@ -429,7 +454,7 @@ const CanvasStage: React.FC = () => {
         };
       }
     }
-  }, [components, selectComponent]);
+  }, [components, selectComponent, selectedIds, toggleSelectComponent, clearSelection, selectComponents]);
 
   // Window-level mouse move + up
   useEffect(() => {
@@ -444,21 +469,22 @@ const CanvasStage: React.FC = () => {
         const t = transformRef.current;
         const dx = (e.clientX - ds.startScreenX) / t.zoom;
         const dy = (e.clientY - ds.startScreenY) / t.zoom;
-        const px = (ds.startCompX ?? 0) + dx;
-        const py = (ds.startCompY ?? 0) + dy;
-        dragPreviewRef.current = {
-          componentId: ds.componentId,
-          x: px,
-          y: py,
-        };
+        const targets = ds.targets ?? [{ componentId: ds.componentId, startCompX: ds.startCompX ?? 0, startCompY: ds.startCompY ?? 0, baseX: ds.baseX ?? 0, baseY: ds.baseY ?? 0 }];
+        dragPreviewRef.current = targets.map((tg) => ({
+          componentId: tg.componentId,
+          x: tg.startCompX + dx,
+          y: tg.startCompY + dy,
+        }));
+        if (targets.length > 1) console.log('[mousemove] previews.length:', dragPreviewRef.current.length, 'dx:', dx, 'dy:', dy);
 
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             const dragComp = findComponentById(components, ds.componentId);
-            if (dragComp) {
-              alignmentRef.current = findAlignments(dragComp, px, py, components, ctx);
+            if (dragComp && dragPreviewRef.current.length > 0) {
+              const p0 = dragPreviewRef.current[0];
+              alignmentRef.current = findAlignments(dragComp, p0.x, p0.y, components, ctx);
             }
           }
         }
@@ -552,13 +578,22 @@ const CanvasStage: React.FC = () => {
         setRenderTick((tick) => tick + 1);
       }
       if (ds.type === 'move' && ds.componentId !== undefined) {
-        const preview = dragPreviewRef.current;
-        if (preview && (preview.x !== ds.startCompX || preview.y !== ds.startCompY)) {
-          const newX = (ds.baseX ?? 0) + Math.round(preview.x) - (ds.startCompX ?? 0);
-          const newY = (ds.baseY ?? 0) + Math.round(preview.y) - (ds.startCompY ?? 0);
-          updateComponentPosition(preview.componentId, newX, newY);
+        const previews = dragPreviewRef.current;
+        if (previews.length > 0) {
+          const targets = ds.targets ?? [{ componentId: ds.componentId, startCompX: ds.startCompX ?? 0, startCompY: ds.startCompY ?? 0, baseX: ds.baseX ?? 0, baseY: ds.baseY ?? 0 }];
+          let commitCount = 0;
+          for (const tg of targets) {
+            const pv = previews.find((p) => p.componentId === tg.componentId);
+            if (pv && (pv.x !== tg.startCompX || pv.y !== tg.startCompY)) {
+              const newX = tg.baseX + Math.round(pv.x) - tg.startCompX;
+              const newY = tg.baseY + Math.round(pv.y) - tg.startCompY;
+              updateComponentPosition(tg.componentId, newX, newY);
+              commitCount++;
+            }
+          }
+          if (targets.length > 1) console.log('[mouseup] commitCount:', commitCount, '/', targets.length);
         }
-        dragPreviewRef.current = null;
+        dragPreviewRef.current = [];
         setRenderTick((tick) => tick + 1);
       } else if (ds.type === 'resize' && ds.componentId !== undefined) {
         const rp = resizePreviewRef.current;

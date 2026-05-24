@@ -27,16 +27,17 @@ export interface RenderOptions {
   canvasW: number;
   canvasH: number;
   dpr: number;
-  dragPreview?: { componentId: number; x: number; y: number };
+  dragPreview?: Array<{ componentId: number; x: number; y: number }>;
   resizePreview?: { componentId: number; x: number; y: number; w: number; h: number };
   insertionIndicator?: { x: number; y: number; length: number; horizontal: boolean } | null;
+  selectionRect?: { x: number; y: number; w: number; h: number } | null;
   alignmentGuides?: AlignmentGuide[];
   imageCache?: Map<string, HTMLImageElement>;
   onImageLoaded?: () => void;
 }
 
 export function renderCanvas(opts: RenderOptions) {
-  const { ctx, components, selectedComponentIds, transform, canvasW, canvasH, dpr, dragPreview, imageCache, onImageLoaded, alignmentGuides, insertionIndicator } = opts;
+  const { ctx, components, selectedComponentIds, transform, canvasW, canvasH, dpr, dragPreview, resizePreview, imageCache, onImageLoaded, alignmentGuides, insertionIndicator, selectionRect } = opts;
 
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -54,12 +55,21 @@ export function renderCanvas(opts: RenderOptions) {
   );
 
   for (const comp of components) {
-    const { resizePreview } = opts;
     renderComponent(ctx, comp, selectedComponentIds, dragPreview, 0, 0, imageCache, onImageLoaded, transform.zoom, resizePreview);
   }
 
   if (insertionIndicator) {
     drawInsertionLine(ctx, insertionIndicator.x, insertionIndicator.y, insertionIndicator.length, insertionIndicator.horizontal);
+  }
+
+  if (selectionRect) {
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(66, 133, 244, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
+    ctx.fillStyle = 'rgba(66, 133, 244, 0.08)';
+    ctx.fillRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
+    ctx.setLineDash([]);
   }
 
   if (alignmentGuides?.length) {
@@ -73,7 +83,7 @@ function renderComponent(
   ctx: CanvasRenderingContext2D,
   comp: Component,
   selectedIds: number[],
-  dragPreview?: { componentId: number; x: number; y: number },
+  dragPreviews?: Array<{ componentId: number; x: number; y: number }>,
   parentX = 0,
   parentY = 0,
   imageCache?: Map<string, HTMLImageElement>,
@@ -84,9 +94,10 @@ function renderComponent(
   let wx = (comp.x ?? 0) + parentX;
   let wy = (comp.y ?? 0) + parentY;
 
-  if (dragPreview && dragPreview.componentId === comp.id) {
-    wx = dragPreview.x;
-    wy = dragPreview.y;
+  const dp = dragPreviews?.find((p) => p.componentId === comp.id);
+  if (dp) {
+    wx = dp.x;
+    wy = dp.y;
   }
 
   let size = measureComponent(comp, ctx);
@@ -122,7 +133,7 @@ function renderComponent(
         let cy = wy + titleHeight + padding;
         for (const child of comp.children) {
           const childSize = measureComponent(child, ctx);
-          renderComponent(ctx, child, selectedIds, dragPreview, wx + padding, cy, imageCache, onImageLoaded, zoom, resizePreview);
+          renderComponent(ctx, child, selectedIds, dragPreviews, wx + padding, cy, imageCache, onImageLoaded, zoom, resizePreview);
           cy += childSize.height + gap;
         }
       }
@@ -140,7 +151,7 @@ function renderComponent(
           const childSize = measureComponent(child, ctx);
           const childCY = topY + (spaceContentH - childSize.ch) / 2 - childSize.oy;
           const childCYClamped = Math.max(topY, childCY);
-          renderComponent(ctx, child, selectedIds, dragPreview, cx, childCYClamped, imageCache, onImageLoaded, zoom, resizePreview);
+          renderComponent(ctx, child, selectedIds, dragPreviews, cx, childCYClamped, imageCache, onImageLoaded, zoom, resizePreview);
           cx += childSize.width + gap;
         }
       }
@@ -189,18 +200,21 @@ function hitTestComponent(
   if (comp.name === 'Space' && comp.children?.length) {
     const gap = SPACE_GAPS[comp.props?.size || 'middle'] || 16;
     const spaceContentH = size.ch - SPACE_PAD * 2;
-    let cx = compX + SPACE_PAD;
     const topY = compY + SPACE_PAD;
-    for (let i = comp.children.length - 1; i >= 0; i--) {
-      const child = comp.children[i];
+    const positions: Array<{ child: Component; cx: number; cy: number; w: number; h: number }> = [];
+    let cx = compX + SPACE_PAD;
+    for (const child of comp.children) {
       const childSize = measureComponent(child, ctx);
       const childCY = topY + (spaceContentH - childSize.ch) / 2 - childSize.oy;
-      const childCYClamped = Math.max(topY, childCY);
-      if (wx >= cx && wx <= cx + childSize.width && wy >= childCYClamped && wy <= childCYClamped + childSize.height) {
-        const deep = hitTestComponent(child, wx, wy, ctx, cx, childCYClamped);
-        return deep ?? child.id;
-      }
+      positions.push({ child, cx, cy: Math.max(topY, childCY), w: childSize.width, h: childSize.height });
       cx += childSize.width + gap;
+    }
+    for (let i = positions.length - 1; i >= 0; i--) {
+      const p = positions[i];
+      if (wx >= p.cx && wx <= p.cx + p.w && wy >= p.cy && wy <= p.cy + p.h) {
+        const deep = hitTestComponent(p.child, wx, wy, ctx, p.cx, p.cy);
+        return deep ?? p.child.id;
+      }
     }
   }
 
@@ -208,15 +222,19 @@ function hitTestComponent(
     const padding = 12;
     const titleHeight = 36;
     const gap = 8;
+    const positions: Array<{ child: Component; cx: number; cy: number; w: number; h: number }> = [];
     let cy = compY + titleHeight + padding;
-    for (let i = comp.children.length - 1; i >= 0; i--) {
-      const child = comp.children[i];
+    for (const child of comp.children) {
       const childSize = measureComponent(child, ctx);
-      if (wx >= compX + padding && wx <= compX + padding + childSize.width && wy >= cy && wy <= cy + childSize.height) {
-        const deep = hitTestComponent(child, wx, wy, ctx, compX + padding, cy);
-        return deep ?? child.id;
-      }
+      positions.push({ child, cx: compX + padding, cy, w: childSize.width, h: childSize.height });
       cy += childSize.height + gap;
+    }
+    for (let i = positions.length - 1; i >= 0; i--) {
+      const p = positions[i];
+      if (wx >= p.cx && wx <= p.cx + p.w && wy >= p.cy && wy <= p.cy + p.h) {
+        const deep = hitTestComponent(p.child, wx, wy, ctx, p.cx, p.cy);
+        return deep ?? p.child.id;
+      }
     }
   }
 

@@ -3,6 +3,7 @@ import {
   useEffect,
   useImperativeHandle,
   useState,
+  useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -13,15 +14,30 @@ interface Props {
   containerClassName: string;
   // 相对容器class
   offsetContainerClassName: string;
+  // 拖拽开始回调
+  onDragStart?: (e: React.MouseEvent) => void;
+  // 拖拽移动回调
+  onDragMove?: (deltaX: number, deltaY: number) => void;
+  // 拖拽结束回调
+  onDragEnd?: () => void;
 }
 
-function SelectedMask({ componentId, containerClassName, offsetContainerClassName }: Props, ref: any) {
+function SelectedMask({ 
+  componentId, 
+  containerClassName, 
+  offsetContainerClassName,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: Props, ref: any) {
   const [position, setPosition] = useState({
     left: 0,
     top: 0,
     width: 0,
     height: 0,
   });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // 对外暴露更新位置方法
   useImperativeHandle(ref, () => ({
@@ -47,8 +63,6 @@ function SelectedMask({ componentId, containerClassName, offsetContainerClassNam
     // 获取容器位置
     const { top: containerTop, left: containerLeft } = container.getBoundingClientRect();
 
-    console.log(top - containerTop + container.scrollTop, left - containerLeft);
-
     // 计算位置
     setPosition({
       top: top - containerTop + container.scrollTop,
@@ -58,6 +72,38 @@ function SelectedMask({ componentId, containerClassName, offsetContainerClassNam
     });
   }
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.left, y: e.clientY - position.top });
+    onDragStart?.(e);
+  }, [position.left, position.top, onDragStart]);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    const deltaX = e.clientX - dragStart.x - position.left;
+    const deltaY = e.clientY - dragStart.y - position.top;
+    onDragMove?.(deltaX, deltaY);
+  }, [isDragging, dragStart, position.left, position.top, onDragMove]);
+
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      onDragEnd?.();
+    }
+  }, [isDragging, onDragEnd]);
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+
   return createPortal((
     <div
       style={{
@@ -66,13 +112,14 @@ function SelectedMask({ componentId, containerClassName, offsetContainerClassNam
         top: position.top,
         backgroundColor: 'rgba(66, 133, 244, 0.2)',
         border: '1px solid rgb(66, 133, 244)',
-        pointerEvents: 'none',
+        cursor: 'move',
         width: position.width,
         height: position.height,
         zIndex: 1003,
         borderRadius: 4,
         boxSizing: 'border-box',
       }}
+      onMouseDown={handleMouseDown}
     />
   ), document.querySelector(`.${containerClassName}`)!);
 }

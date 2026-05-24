@@ -19,7 +19,6 @@ const ComponentAI: React.FC = () => {
   const clearMessages = useAIChatStore((s) => s.clearMessages);
 
   const curComponent = useSelectedComponent();
-  const selectedComponentId = useComponents((s) => s.selectedComponentId);
   const updateComponentStyles = useComponents((s) => s.updateComponentStyles);
 
   useEffect(() => {
@@ -38,7 +37,7 @@ const ComponentAI: React.FC = () => {
     const text = input.trim();
     if (!text || loading) return;
 
-    if (!selectedComponentId || !curComponent) {
+    if (!curComponent) {
       addMessage({ role: 'user', content: text });
       addMessage({ role: 'assistant', content: '请先在画布上选中一个组件。' });
       setInput('');
@@ -58,7 +57,7 @@ const ComponentAI: React.FC = () => {
 
       for (const tc of response.toolCalls) {
         if (tc.name === 'update_component_styles') {
-          updateComponentStyles(selectedComponentId, tc.input.styles);
+          updateComponentStyles(curComponent.id, tc.input.styles);
         }
       }
 
