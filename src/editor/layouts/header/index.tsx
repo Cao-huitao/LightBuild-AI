@@ -4,10 +4,12 @@ import { UndoOutlined, RedoOutlined } from '@ant-design/icons';
 import { useComponents } from '../../stores/components';
 import ComponentTree from './component-tree';
 import DefineVariable from './define-variable';
+import DataSourcePanel from './datasource-panel';
 
 const Header: React.FC = () => {
   const [treeOpen, setTreeOpen] = useState(false);
   const [variableOpen, setVariableOpen] = useState(false);
+  const [dsOpen, setDsOpen] = useState(false);
   const { mode, setMode, selectComponent, undo, redo, history, future } = useComponents();
 
   useEffect(() => {
@@ -53,6 +55,11 @@ const Header: React.FC = () => {
               定义变量
             </Button>
             <Button
+              onClick={() => { setDsOpen(true); }}
+            >
+              数据源
+            </Button>
+            <Button
               onClick={() => {
                 setTreeOpen(true);
               }}
@@ -86,6 +93,10 @@ const Header: React.FC = () => {
       <DefineVariable
         open={variableOpen}
         onCancel={() => { setVariableOpen(false); }}
+      />
+      <DataSourcePanel
+        open={dsOpen}
+        onCancel={() => { setDsOpen(false); }}
       />
     </div>
   );

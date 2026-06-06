@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ITEM_TYPE } from '../../item-type';
 import { useComponents, useSelectedComponent } from '../../stores/components';
 import { useVariablesStore } from '../../stores/variable';
+import { useDataSourceStore } from '../../stores/datasource';
 
 const componentEventMap: Record<string, any[]> = {
   [ITEM_TYPE.BUTTON]: [{
@@ -20,6 +21,10 @@ const componentEventMap: Record<string, any[]> = {
   [ITEM_TYPE.CARD]: [{
     name: 'onClick',
     label: '点击事件',
+  }],
+  [ITEM_TYPE.INPUT]: [{
+    name: 'onChange',
+    label: '值变化',
   }],
 };
 
@@ -45,7 +50,12 @@ const ComponentEvent: React.FC = () => {
 
   function typeChange(eventName: string, value: string) {
     if (!selectedComponentId) return;
-    updateComponentProps(selectedComponentId, { [eventName]: { type: value } });
+    updateComponentProps(selectedComponentId, {
+      [eventName]: {
+        type: value,
+        config: curComponent?.props?.[eventName]?.config || {}
+      }
+    });
     // 如果切换到其他类型，清空选择的组件
     if (value !== 'componentFunction') {
       setSelectedMethodComponentId(undefined);
@@ -191,6 +201,7 @@ const ComponentEvent: React.FC = () => {
                           { label: '组件方法', value: 'componentFunction' },
                           { label: '设置变量', value: 'setVariable' },
                           { label: '执行脚本', value: 'execScript' },
+                          { label: '调用数据源', value: 'callDataSource' },
                         ]}
                         onChange={(value) => { typeChange(setting.name, value); }}
                         value={curComponent?.props?.[setting.name]?.type}
@@ -292,23 +303,33 @@ const ComponentEvent: React.FC = () => {
                           <Input.TextArea
                             style={{ width: 260 }}
                             rows={12}
-                            defaultValue={`(function(ctx) {
-  // 示例1：设置变量值
-  ctx.setData('name', 'hello world');
-  
-  // 示例2：获取按钮组件引用并调用方法
-  const button = ctx.getComponentRef(1620000000000);
-  if (button) {
-    button.startLoading();
-    
-    // 3秒后停止 loading
-    setTimeout(() => {
-      button.endLoading();
-    }, 3000);
-  }
-})(ctx)`}
+                            defaultValue={`(function(ctx) {\n  ctx.setData('name', 'hello world');\n  const button = ctx.getComponentRef(1620000000000);\n  if (button) button.startLoading();\n})(ctx)`}
                             value={curComponent?.props?.[setting.name]?.config?.script}
                             onChange={(e) => { scriptChange(setting.name, e.target.value); }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {curComponent?.props?.[setting.name]?.type === 'callDataSource' && (
+                    <div className='flex flex-col gap-[12px] mt-[12px]'>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div>数据源：</div>
+                        <div>
+                          <Select
+                            className='w-[200px]'
+                            placeholder="选择数据源"
+                            options={useDataSourceStore.getState().dataSources.map((ds) => ({ label: ds.name, value: ds.id }))}
+                            value={curComponent?.props?.[setting.name]?.config?.dataSourceId}
+                            onChange={(value) => {
+                              if (!selectedComponentId) return;
+                              updateComponentProps(selectedComponentId, {
+                                [setting.name]: {
+                                  type: 'callDataSource',
+                                  config: { ...curComponent?.props?.[setting.name]?.config, dataSourceId: value },
+                                },
+                              });
+                            }}
                           />
                         </div>
                       </div>

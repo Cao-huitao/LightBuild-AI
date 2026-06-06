@@ -107,9 +107,9 @@ const selectedComponentId = selectedIds[0] ?? null;
     return null;
   }
 
-  function valueChange(changeValues: any) {
+  function valueChange(changedValues: any, allValues: any) {
     if (selectedComponentId) {
-      updateComponentProps(selectedComponentId, changeValues);
+      updateComponentProps(selectedComponentId, allValues);
     }
   }
 

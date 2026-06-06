@@ -5,6 +5,7 @@ import { useVariablesStore } from '../stores/variable';
 import { usePageDataStore } from '../stores/page-data';
 import type { Component } from '../stores/components';
 import Space from '../components/space';
+import { executeDataSource } from './datasource-executor';
 import Text from '../components/Text';
 import Image from '../components/Image';
 import Card from '../components/card';
@@ -37,6 +38,10 @@ const componentEventMap: Record<string, any[]> = {
   [ITEM_TYPE.CARD]: [{
     name: 'onClick',
     label: '点击事件',
+  }],
+  [ITEM_TYPE.INPUT]: [{
+    name: 'onChange',
+    label: '值变化',
   }],
 };
 
@@ -90,7 +95,8 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
       if (!eventConfig) return;
 
       const { type, config } = eventConfig;
-      eventProps[event.name] = () => {
+
+      eventProps[event.name] = (e?: any) => {
         if (type === 'showMessage') {
           let text = config.text;
           if (typeof text === 'object' && text.type !== undefined) {
@@ -114,11 +120,23 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
           }
         } else if (type === 'setVariable') {
           const { variable, value } = config;
-          if (variable && value) {
-            setData(variable, value);
+          if (!variable) return;
+
+          let finalValue = value;
+          if (event.name === 'onChange' && e && e.target) {
+            finalValue = e.target.value;
           }
+          setData(variable, finalValue);
         } else if (type === 'execScript') {
           execScript(config.script);
+        } else if (type === 'callDataSource') {
+          executeDataSource(config.dataSourceId).then((result) => {
+            if (result.success) {
+              message.success('数据源调用成功');
+            } else {
+              message.error(`数据源调用失败: ${result.error}`);
+            }
+          });
         }
       };
     });
@@ -127,7 +145,25 @@ const UnifiedRenderer: React.FC<UnifiedRendererProps> = ({ mode }) => {
   }
 
   function renderChildren(component: Component): React.ReactNode {
-    if (VOID_ELEMENTS.includes(component.name)) return null;
+    // 对于 VOID_ELEMENTS（如 Text、Input、Image），children 通过 props 传递
+    // 但 Text 组件的 children 是文本内容，需要特殊处理
+    if (VOID_ELEMENTS.includes(component.name)) {
+      // Text 组件的 children 是文本内容，需要从 props 中获取
+      if (component.name === 'Text' && component.props.children !== undefined) {
+        const childrenValue = component.props.children;
+        if (typeof childrenValue === 'object' && childrenValue.type !== undefined) {
+          if (childrenValue.type === 'static') {
+            return childrenValue.value;
+          } else if (childrenValue.type === 'variable') {
+            const variables = useVariablesStore.getState().variables;
+            const variable = variables.find((v) => v.name === childrenValue.value);
+            return data[childrenValue.value] || variable?.defaultValue;
+          }
+        }
+        return childrenValue;
+      }
+      return null;
+    }
 
     const hasNestedChildren = component.children && component.children.length > 0;
     if (hasNestedChildren) {
