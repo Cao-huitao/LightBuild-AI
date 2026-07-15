@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface DataSourceConfig {
   id: string;
@@ -17,7 +18,9 @@ interface DataSourceState {
   deleteDataSource: (id: string) => void;
 }
 
-export const useDataSourceStore = create<DataSourceState>((set) => ({
+export const useDataSourceStore = create<DataSourceState>()(
+  persist(
+    (set) => ({
   dataSources: [],
   addDataSource: (ds) =>
     set((state) => ({ dataSources: [...state.dataSources, ds] })),
@@ -31,4 +34,10 @@ export const useDataSourceStore = create<DataSourceState>((set) => ({
     set((state) => ({
       dataSources: state.dataSources.filter((ds) => ds.id !== id),
     })),
-}));
+    }),
+    {
+      name: 'lightbuild-datasources',
+      storage: createJSONStorage(() => localStorage),
+    },
+  ),
+);

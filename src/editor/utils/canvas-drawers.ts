@@ -1,4 +1,6 @@
 import type { Component } from '../stores/components';
+import type { MeasureCache } from './measure-cache';
+import { getCachedMeasure, setCachedMeasure } from './measure-cache';
 
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
@@ -131,6 +133,19 @@ export function measureComponent(
   const mb = typeof s.marginBottom === 'number' ? s.marginBottom : 0;
 
   return { width: cw + ml + mr, height: ch + mt + mb, cw, ch, ox: ml, oy: mt };
+}
+
+/** 带缓存的 measureComponent，先查缓存，未命中则计算并存入缓存 */
+export function measureComponentCached(
+  component: Component,
+  ctx: CanvasRenderingContext2D,
+  cache: MeasureCache,
+): ComponentSize {
+  const cached = getCachedMeasure(component, cache);
+  if (cached) return cached;
+  const size = measureComponent(component, ctx);
+  setCachedMeasure(component, size, cache);
+  return size;
 }
 
 function marginOf(style: any) {

@@ -2,11 +2,14 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useDrop } from 'react-dnd';
 import { useComponents } from '../../stores/components';
 import { useCanvasTransform } from '../../hooks/useCanvasTransform';
-import { renderCanvas, hitTest, findComponentById, getAbsolutePosition } from '../../utils/canvas-renderer';
+import { renderCanvas, renderCanvasOptimized, hitTest, findComponentById, getAbsolutePosition } from '../../utils/canvas-renderer';
+import { createStaticBuffer, invalidateStaticBuffer, setExcludedComponents, rebuildStaticBuffer } from '../../utils/static-buffer';
+import type { StaticBufferState } from '../../utils/static-buffer';
 import { measureComponent } from '../../utils/canvas-drawers';
 import type { AlignmentGuide } from '../../utils/canvas-drawers';
 import { screenToWorld } from '../../utils/coords';
 import type { Component } from '../../stores/components';
+import type { MeasureCache } from '../../utils/measure-cache';
 
 const ALIGN_THRESHOLD = 5;
 
@@ -56,12 +59,12 @@ function findAlignments(
     const segYMax = Math.max(dr.y + dr.h, r.y + r.h);
 
     const checks: Array<{ type: AlignmentGuide['type']; val: number; tar: number }> = [
-      { type: 'left',    val: dEdges.left,   tar: r.x },
-      { type: 'right',   val: dEdges.right,  tar: r.x + r.w },
-      { type: 'top',     val: dEdges.top,    tar: r.y },
-      { type: 'bottom',  val: dEdges.bottom, tar: r.y + r.h },
-      { type: 'centerX', val: dEdges.cx,     tar: r.x + r.w / 2 },
-      { type: 'centerY', val: dEdges.cy,     tar: r.y + r.h / 2 },
+      { type: 'left', val: dEdges.left, tar: r.x },
+      { type: 'right', val: dEdges.right, tar: r.x + r.w },
+      { type: 'top', val: dEdges.top, tar: r.y },
+      { type: 'bottom', val: dEdges.bottom, tar: r.y + r.h },
+      { type: 'centerX', val: dEdges.cx, tar: r.x + r.w / 2 },
+      { type: 'centerY', val: dEdges.cy, tar: r.y + r.h / 2 },
     ];
 
     for (const ck of checks) {
@@ -126,6 +129,8 @@ const CanvasStage: React.FC = () => {
   const selectionRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const alignmentRef = useRef<AlignmentGuide[]>([]);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const measureCacheRef = useRef<MeasureCache>(new Map());
+  const staticBufferRef = useRef<StaticBufferState>(createStaticBuffer());
   const spaceRef = useRef(false);
   const dprRef = useRef(window.devicePixelRatio || 1);
 
@@ -146,6 +151,7 @@ const CanvasStage: React.FC = () => {
   const [renderTick, setRenderTick] = useState(0);
 
   const onImageLoaded = useCallback(() => {
+    invalidateStaticBuffer(staticBufferRef.current);
     setRenderTick((tick) => tick + 1);
   }, []);
 
@@ -154,7 +160,11 @@ const CanvasStage: React.FC = () => {
     if (!canvas || canvasSize.width === 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    renderCanvas({
+
+    const isDragging = dragStateRef.current.type === 'move' && dragPreviewRef.current.length > 0;
+    const isResizing = dragStateRef.current.type === 'resize' && resizePreviewRef.current !== null;
+
+    const renderOpts = {
       ctx,
       components,
       selectedComponentIds: selectedIds,
@@ -169,7 +179,14 @@ const CanvasStage: React.FC = () => {
       onImageLoaded,
       alignmentGuides: alignmentRef.current,
       selectionRect: selectionRectRef.current,
-    });
+      measureCache: measureCacheRef.current,
+    };
+
+    if ((isDragging || isResizing) && !staticBufferRef.current.dirty) {
+      renderCanvasOptimized(ctx, staticBufferRef.current, renderOpts);
+    } else {
+      renderCanvas(renderOpts);
+    }
   }, [components, selectedIds, canvasSize, transform]);
 
   // Store-driven re-renders
@@ -189,7 +206,7 @@ const CanvasStage: React.FC = () => {
       const world = screenToWorld(offset.x, offset.y, rect, transformRef.current);
       const ctx = canvas.getContext('2d');
       if (!ctx) { insertionRef.current = null; return; }
-      const hitId = hitTest(components, world.x, world.y, ctx);
+      const hitId = hitTest(components, world.x, world.y, ctx, measureCacheRef.current);
       if (hitId === null) { insertionRef.current = null; insertionStateRef.current = null; setRenderTick(t => t + 1); return; }
       const hitComp = findComponentById(components, hitId);
       const isContainer = hitComp?.name === 'Space' || hitComp?.name === 'Card';
@@ -200,29 +217,84 @@ const CanvasStage: React.FC = () => {
       const children = hitComp.children ?? [];
       const sx = abs.x + cs.ox, sy = abs.y + cs.oy;
       if (hitComp.name === 'Space') {
-        const gap = ({ small: 8, middle: 16, large: 24 } as Record<string, number>)[hitComp.props?.size || 'middle'] || 16;
+        // 记录每个子组件的位置和中心点
+        const positions: Array<{ cx: number; w: number; center: number }> = [];
         let cx = sx + 16;
-        let idx = 0;
         for (const child of children) {
           const childCs = measureComponent(child, ctx);
-          if (world.x < cx + childCs.width / 2) break;
-          cx += childCs.width + gap;
-          idx++;
+          positions.push({ cx, w: childCs.width, center: cx + childCs.width / 2 });
+          cx += childCs.width + ({ small: 8, middle: 16, large: 24 } as Record<string, number>)[hitComp.props?.size || 'middle'] || 16;
         }
+
+        // 判断鼠标位置，确定插入区间
+        let idx = 0;
+        for (let i = 0; i < positions.length; i++) {
+          const p = positions[i];
+          if (world.x < p.center) {
+            idx = i;
+            break;
+          }
+          idx = i + 1;
+        }
+
+        // 使用中心点计算间隙中间位置
+        let insertionX: number;
+        if (idx === 0) {
+          // 第一个子组件之前
+          insertionX = positions.length > 0 ? positions[0].cx - 8 : sx + 8;
+        } else if (idx <= positions.length - 1 && positions.length > 0) {
+          // 两个子组件之间：使用中心点平均值
+          const prevCenter = positions[idx - 1].center;
+          const currCenter = positions[idx].center;
+          insertionX = (prevCenter + currCenter) / 2;
+        } else {
+          // 最后一个子组件之后
+          const last = positions[positions.length - 1];
+          insertionX = last.cx + last.w + 8;
+        }
+
         const len = Math.max(cs.ch - 32, 32);
-        insertionRef.current = { x: cx - gap / 2, y: sy + 16, length: len, horizontal: false };
+        insertionRef.current = { x: insertionX, y: sy + 16, length: len, horizontal: false };
         insertionStateRef.current = { containerId: hitId, index: idx };
       } else if (hitComp.name === 'Card') {
+        // 记录每个子组件的位置和中心点
+        const positions: Array<{ cy: number; h: number; center: number }> = [];
         let cy = sy + 48;
-        let idx = 0;
         for (const child of children) {
           const childCs = measureComponent(child, ctx);
-          if (world.y < cy + childCs.height / 2) break;
+          positions.push({ cy, h: childCs.height, center: cy + childCs.height / 2 });
           cy += childCs.height + 8;
-          idx++;
         }
+
+        // 判断鼠标位置，确定插入区间
+        let idx = 0;
+        for (let i = 0; i < positions.length; i++) {
+          const p = positions[i];
+          if (world.y < p.center) {
+            idx = i;
+            break;
+          }
+          idx = i + 1;
+        }
+
+        // 使用中心点计算间隙中间位置
+        let insertionY: number;
+        if (idx === 0) {
+          // 第一个子组件之前
+          insertionY = positions.length > 0 ? positions[0].cy - 4 : sy + 44;
+        } else if (idx <= positions.length - 1 && positions.length > 0) {
+          // 两个子组件之间：使用中心点平均值
+          const prevCenter = positions[idx - 1].center;
+          const currCenter = positions[idx].center;
+          insertionY = (prevCenter + currCenter) / 2;
+        } else {
+          // 最后一个子组件之后
+          const last = positions[positions.length - 1];
+          insertionY = last.cy + last.h + 4;
+        }
+
         const len = Math.max(cs.cw - 24, 48);
-        insertionRef.current = { x: sx + 12, y: cy - 4, length: len, horizontal: true };
+        insertionRef.current = { x: sx + 12, y: insertionY, length: len, horizontal: true };
         insertionStateRef.current = { containerId: hitId, index: idx };
       }
       setRenderTick(t => t + 1);
@@ -237,7 +309,7 @@ const CanvasStage: React.FC = () => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return { x: Math.round(world.x), y: Math.round(world.y) };
 
-      const hitId = hitTest(components, world.x, world.y, ctx);
+      const hitId = hitTest(components, world.x, world.y, ctx, measureCacheRef.current);
       const is = insertionStateRef.current;
       insertionRef.current = null;
       insertionStateRef.current = null;
@@ -314,6 +386,41 @@ const CanvasStage: React.FC = () => {
     };
   }, [selectedIds, deleteComponent, deleteSelectedComponents]);
 
+  // Subscribe to store: clear caches when component tree changes
+  useEffect(() => {
+    const unsub = useComponents.subscribe((state, prevState) => {
+      if (state.components !== prevState.components) {
+        measureCacheRef.current.clear();
+        setExcludedComponents(staticBufferRef.current, new Set());
+        invalidateStaticBuffer(staticBufferRef.current);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Invalidate static buffer when transform changes (pan/zoom)
+  useEffect(() => {
+    invalidateStaticBuffer(staticBufferRef.current);
+  }, [transform]);
+
+  // Rebuild static buffer when dirty
+  useEffect(() => {
+    const sb = staticBufferRef.current;
+    if (!sb.dirty) return;
+    const canvas = canvasRef.current;
+    if (!canvas || canvasSize.width === 0) return;
+    rebuildStaticBuffer(sb, {
+      components,
+      transform: transformRef.current,
+      canvasW: canvasSize.width,
+      canvasH: canvasSize.height,
+      dpr: dprRef.current,
+      imageCache: imageCacheRef.current,
+      measureCache: measureCacheRef.current,
+      insertionIndicator: insertionRef.current,
+    });
+  }, [components, canvasSize, renderTick]);
+
   function hitTestHandle(
     comp: Component,
     worldX: number,
@@ -327,13 +434,13 @@ const CanvasStage: React.FC = () => {
     const hs = 10 / transformRef.current.zoom;
     const points: Array<{ dir: HandleDir; x: number; y: number }> = [
       { dir: 'nw', x: sx, y: sy },
-      { dir: 'n',  x: sx + sw / 2, y: sy },
+      { dir: 'n', x: sx + sw / 2, y: sy },
       { dir: 'ne', x: sx + sw, y: sy },
-      { dir: 'e',  x: sx + sw, y: sy + sh / 2 },
+      { dir: 'e', x: sx + sw, y: sy + sh / 2 },
       { dir: 'se', x: sx + sw, y: sy + sh },
-      { dir: 's',  x: sx + sw / 2, y: sy + sh },
+      { dir: 's', x: sx + sw / 2, y: sy + sh },
       { dir: 'sw', x: sx, y: sy + sh },
-      { dir: 'w',  x: sx, y: sy + sh / 2 },
+      { dir: 'w', x: sx, y: sy + sh / 2 },
     ];
     for (const p of points) {
       if (Math.abs(worldX - p.x) < hs && Math.abs(worldY - p.y) < hs) {
@@ -368,7 +475,7 @@ const CanvasStage: React.FC = () => {
     // Left click = select / drag
     if (e.button === 0) {
       const world = screenToWorld(e.clientX, e.clientY, rect, transformRef.current);
-      const hitId = hitTest(components, world.x, world.y, ctx);
+      const hitId = hitTest(components, world.x, world.y, ctx, measureCacheRef.current);
 
       if (hitId !== null) {
         if (e.shiftKey && hitId) {
@@ -409,6 +516,7 @@ const CanvasStage: React.FC = () => {
             baseX: hitComp?.x ?? 0,
             baseY: hitComp?.y ?? 0,
           };
+          setExcludedComponents(staticBufferRef.current, new Set([hitId]));
         } else {
           const idsToMove = multiDrag ? selectedIds : [hitId];
           const targets: DragTarget[] = [];
@@ -439,6 +547,7 @@ const CanvasStage: React.FC = () => {
             baseY: targets[0]?.baseY ?? 0,
             targets,
           };
+          setExcludedComponents(staticBufferRef.current, new Set(targets.map(t => t.componentId)));
         }
       } else {
         if (e.shiftKey) return;  // Shift+空白 → 保持选中不变
@@ -500,10 +609,10 @@ const CanvasStage: React.FC = () => {
         let nw = bw, nh = bh, nx = bx, ny = by;
 
         const h = ds.handle;
-        if (h === 'e')  { nw = Math.max(MIN, bw + dx); }
-        if (h === 'w')  { nw = Math.max(MIN, bw - dx); nx = bx + dx; }
-        if (h === 's')  { nh = Math.max(MIN, bh + dy); }
-        if (h === 'n')  { nh = Math.max(MIN, bh - dy); ny = by + dy; }
+        if (h === 'e') { nw = Math.max(MIN, bw + dx); }
+        if (h === 'w') { nw = Math.max(MIN, bw - dx); nx = bx + dx; }
+        if (h === 's') { nh = Math.max(MIN, bh + dy); }
+        if (h === 'n') { nh = Math.max(MIN, bh - dy); ny = by + dy; }
         if (h === 'ne') { nw = Math.max(MIN, bw + dx); nh = nw / ratio; ny = by + bh - nh; }
         if (h === 'sw') { nh = Math.max(MIN, bh + dy); nw = nh * ratio; nx = bx + bw - nw; }
         if (h === 'nw') {
@@ -612,6 +721,11 @@ const CanvasStage: React.FC = () => {
         }
         resizePreviewRef.current = null;
         setRenderTick((tick) => tick + 1);
+      }
+      // Clear excluded components + invalidate static buffer after drag/resize ends
+      if (ds.type === 'move' || ds.type === 'resize') {
+        setExcludedComponents(staticBufferRef.current, new Set());
+        invalidateStaticBuffer(staticBufferRef.current);
       }
       dragStateRef.current = {
         type: 'none', startScreenX: 0, startScreenY: 0, startPanX: 0, startPanY: 0,

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface Variable {
   /**
@@ -50,7 +51,9 @@ interface Action {
   updateVariable: (name: string, variable: Partial<Variable>) => void;
 }
 
-export const useVariablesStore = create<State & Action>((set) => ({
+export const useVariablesStore = create<State & Action>()(
+  persist(
+    (set) => ({
   variables: [],
   
   setVariables: (variables) => set({ variables }),
@@ -68,4 +71,10 @@ export const useVariablesStore = create<State & Action>((set) => ({
       v.name === name ? { ...v, ...variable } : v
     ),
   })),
-}));
+    }),
+    {
+      name: 'lightbuild-variables',
+      storage: createJSONStorage(() => localStorage),
+    },
+  ),
+);

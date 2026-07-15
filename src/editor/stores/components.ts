@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface Component {
   id: number;
@@ -247,7 +248,9 @@ function cloneComponentTree(component: Component): Component {
   return clone(component);
 }
 
-export const useComponents = create<State & Action>((set) => ({
+export const useComponents = create<State & Action>()(
+  persist(
+    (set) => ({
   components: [],
   selectedComponentIds: [],
   mode: 'edit',
@@ -365,7 +368,16 @@ export const useComponents = create<State & Action>((set) => ({
     }),
 
   setMode: (mode) => set({ mode }),
-}));
+    }),
+    {
+      name: 'lightbuild-components',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        components: state.components,
+      }),
+    },
+  ),
+);
 
 export const useSelectedComponent = () => {
   const components = useComponents((state) => state.components);
